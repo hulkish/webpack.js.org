@@ -66,21 +66,21 @@ module.exports =
 	return modules;
 }([
 /* 0 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	module.exports = {
-	  renderPage: __webpack_require__(388),
-	  allPaths: __webpack_require__(157).allPages() // XXX: rename allPaths to allPages
+	  renderPage: __webpack_require__(363),
+	  allPaths: __webpack_require__(165).allPages() // XXX: rename allPaths to allPages
 	};
 
-/***/ },
+/***/ }),
 /* 1 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(module) {//! moment.js
-	//! version : 2.17.1
+	//! version : 2.18.1
 	//! authors : Tim Wood, Iskren Chernev, Moment.js contributors
 	//! license : MIT
 	//! momentjs.com
@@ -120,6 +120,10 @@ module.exports =
 	        return false;
 	    }
 	    return true;
+	}
+
+	function isUndefined(input) {
+	    return input === void 0;
 	}
 
 	function isNumber(input) {
@@ -178,7 +182,9 @@ module.exports =
 	        userInvalidated : false,
 	        iso             : false,
 	        parsedDateParts : [],
-	        meridiem        : null
+	        meridiem        : null,
+	        rfc2822         : false,
+	        weekdayMismatch : false
 	    };
 	}
 
@@ -254,10 +260,6 @@ module.exports =
 	    return m;
 	}
 
-	function isUndefined(input) {
-	    return input === void 0;
-	}
-
 	// Plugins that add properties should also add the key here (null value),
 	// so we can properly clone ourselves.
 	var momentProperties = hooks.momentProperties = [];
@@ -297,7 +299,7 @@ module.exports =
 	    }
 
 	    if (momentProperties.length > 0) {
-	        for (i in momentProperties) {
+	        for (i = 0; i < momentProperties.length; i++) {
 	            prop = momentProperties[i];
 	            val = from[prop];
 	            if (!isUndefined(val)) {
@@ -434,8 +436,11 @@ module.exports =
 	    }
 	    this._config = config;
 	    // Lenient ordinal parsing accepts just a number in addition to
-	    // number + (possibly) stuff coming from _ordinalParseLenient.
-	    this._ordinalParseLenient = new RegExp(this._ordinalParse.source + '|' + (/\d{1,2}/).source);
+	    // number + (possibly) stuff coming from _dayOfMonthOrdinalParse.
+	    // TODO: Remove "ordinalParse" fallback in next major release.
+	    this._dayOfMonthOrdinalParseLenient = new RegExp(
+	        (this._dayOfMonthOrdinalParse.source || this._ordinalParse.source) +
+	            '|' + (/\d{1,2}/).source);
 	}
 
 	function mergeConfigs(parentConfig, childConfig) {
@@ -533,7 +538,7 @@ module.exports =
 	}
 
 	var defaultOrdinal = '%d';
-	var defaultOrdinalParse = /\d{1,2}/;
+	var defaultDayOfMonthOrdinalParse = /\d{1,2}/;
 
 	function ordinal (number) {
 	    return this._ordinal.replace('%d', number);
@@ -543,6 +548,7 @@ module.exports =
 	    future : 'in %s',
 	    past   : '%s ago',
 	    s  : 'a few seconds',
+	    ss : '%d seconds',
 	    m  : 'a minute',
 	    mm : '%d minutes',
 	    h  : 'an hour',
@@ -725,7 +731,7 @@ module.exports =
 	    return function (mom) {
 	        var output = '', i;
 	        for (i = 0; i < length; i++) {
-	            output += array[i] instanceof Function ? array[i].call(mom, format) : array[i];
+	            output += isFunction(array[i]) ? array[i].call(mom, format) : array[i];
 	        }
 	        return output;
 	    };
@@ -928,7 +934,8 @@ module.exports =
 	var defaultLocaleMonths = 'January_February_March_April_May_June_July_August_September_October_November_December'.split('_');
 	function localeMonths (m, format) {
 	    if (!m) {
-	        return this._months;
+	        return isArray(this._months) ? this._months :
+	            this._months['standalone'];
 	    }
 	    return isArray(this._months) ? this._months[m.month()] :
 	        this._months[(this._months.isFormat || MONTHS_IN_FORMAT).test(format) ? 'format' : 'standalone'][m.month()];
@@ -937,7 +944,8 @@ module.exports =
 	var defaultLocaleMonthsShort = 'Jan_Feb_Mar_Apr_May_Jun_Jul_Aug_Sep_Oct_Nov_Dec'.split('_');
 	function localeMonthsShort (m, format) {
 	    if (!m) {
-	        return this._monthsShort;
+	        return isArray(this._monthsShort) ? this._monthsShort :
+	            this._monthsShort['standalone'];
 	    }
 	    return isArray(this._monthsShort) ? this._monthsShort[m.month()] :
 	        this._monthsShort[MONTHS_IN_FORMAT.test(format) ? 'format' : 'standalone'][m.month()];
@@ -1204,11 +1212,11 @@ module.exports =
 	}
 
 	function createDate (y, m, d, h, M, s, ms) {
-	    //can't just apply() to create a date:
-	    //http://stackoverflow.com/questions/181348/instantiating-a-javascript-object-by-calling-prototype-constructor-apply
+	    // can't just apply() to create a date:
+	    // https://stackoverflow.com/q/181348
 	    var date = new Date(y, m, d, h, M, s, ms);
 
-	    //the date constructor remaps years 0-99 to 1900-1999
+	    // the date constructor remaps years 0-99 to 1900-1999
 	    if (y < 100 && y >= 0 && isFinite(date.getFullYear())) {
 	        date.setFullYear(y);
 	    }
@@ -1218,7 +1226,7 @@ module.exports =
 	function createUTCDate (y) {
 	    var date = new Date(Date.UTC.apply(null, arguments));
 
-	    //the Date.UTC function remaps years 0-99 to 1900-1999
+	    // the Date.UTC function remaps years 0-99 to 1900-1999
 	    if (y < 100 && y >= 0 && isFinite(date.getUTCFullYear())) {
 	        date.setUTCFullYear(y);
 	    }
@@ -1235,7 +1243,7 @@ module.exports =
 	    return -fwdlw + fwd - 1;
 	}
 
-	//http://en.wikipedia.org/wiki/ISO_week_date#Calculating_a_date_given_the_year.2C_week_number_and_weekday
+	// https://en.wikipedia.org/wiki/ISO_week_date#Calculating_a_date_given_the_year.2C_week_number_and_weekday
 	function dayOfYearFromWeeks(year, week, weekday, dow, doy) {
 	    var localWeekday = (7 + weekday - dow) % 7,
 	        weekOffset = firstWeekOffset(year, dow, doy),
@@ -1436,7 +1444,8 @@ module.exports =
 	var defaultLocaleWeekdays = 'Sunday_Monday_Tuesday_Wednesday_Thursday_Friday_Saturday'.split('_');
 	function localeWeekdays (m, format) {
 	    if (!m) {
-	        return this._weekdays;
+	        return isArray(this._weekdays) ? this._weekdays :
+	            this._weekdays['standalone'];
 	    }
 	    return isArray(this._weekdays) ? this._weekdays[m.day()] :
 	        this._weekdays[this._weekdays.isFormat.test(format) ? 'format' : 'standalone'][m.day()];
@@ -1756,8 +1765,10 @@ module.exports =
 	addRegexToken('A',  matchMeridiem);
 	addRegexToken('H',  match1to2);
 	addRegexToken('h',  match1to2);
+	addRegexToken('k',  match1to2);
 	addRegexToken('HH', match1to2, match2);
 	addRegexToken('hh', match1to2, match2);
+	addRegexToken('kk', match1to2, match2);
 
 	addRegexToken('hmm', match3to4);
 	addRegexToken('hmmss', match5to6);
@@ -1765,6 +1776,10 @@ module.exports =
 	addRegexToken('Hmmss', match5to6);
 
 	addParseToken(['H', 'HH'], HOUR);
+	addParseToken(['k', 'kk'], function (input, array, config) {
+	    var kInput = toInt(input);
+	    array[HOUR] = kInput === 24 ? 0 : kInput;
+	});
 	addParseToken(['a', 'A'], function (input, array, config) {
 	    config._isPm = config._locale.isPM(input);
 	    config._meridiem = input;
@@ -1835,7 +1850,7 @@ module.exports =
 	    longDateFormat: defaultLongDateFormat,
 	    invalidDate: defaultInvalidDate,
 	    ordinal: defaultOrdinal,
-	    ordinalParse: defaultOrdinalParse,
+	    dayOfMonthOrdinalParse: defaultDayOfMonthOrdinalParse,
 	    relativeTime: defaultRelativeTime,
 
 	    months: defaultLocaleMonths,
@@ -1893,7 +1908,7 @@ module.exports =
 	            module && module.exports) {
 	        try {
 	            oldLocale = globalLocale._abbr;
-	            __webpack_require__(478)("./" + name);
+	            __webpack_require__(454)("./" + name);
 	            // because defineLocale currently also sets the global locale, we
 	            // want to undo that for lazy loaded locales
 	            getSetGlobalLocale(oldLocale);
@@ -2146,6 +2161,77 @@ module.exports =
 	    }
 	}
 
+	// RFC 2822 regex: For details see https://tools.ietf.org/html/rfc2822#section-3.3
+	var basicRfcRegex = /^((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s)?(\d?\d\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s(?:\d\d)?\d\d\s)(\d\d:\d\d)(\:\d\d)?(\s(?:UT|GMT|[ECMP][SD]T|[A-IK-Za-ik-z]|[+-]\d{4}))$/;
+
+	// date and time from ref 2822 format
+	function configFromRFC2822(config) {
+	    var string, match, dayFormat,
+	        dateFormat, timeFormat, tzFormat;
+	    var timezones = {
+	        ' GMT': ' +0000',
+	        ' EDT': ' -0400',
+	        ' EST': ' -0500',
+	        ' CDT': ' -0500',
+	        ' CST': ' -0600',
+	        ' MDT': ' -0600',
+	        ' MST': ' -0700',
+	        ' PDT': ' -0700',
+	        ' PST': ' -0800'
+	    };
+	    var military = 'YXWVUTSRQPONZABCDEFGHIKLM';
+	    var timezone, timezoneIndex;
+
+	    string = config._i
+	        .replace(/\([^\)]*\)|[\n\t]/g, ' ') // Remove comments and folding whitespace
+	        .replace(/(\s\s+)/g, ' ') // Replace multiple-spaces with a single space
+	        .replace(/^\s|\s$/g, ''); // Remove leading and trailing spaces
+	    match = basicRfcRegex.exec(string);
+
+	    if (match) {
+	        dayFormat = match[1] ? 'ddd' + ((match[1].length === 5) ? ', ' : ' ') : '';
+	        dateFormat = 'D MMM ' + ((match[2].length > 10) ? 'YYYY ' : 'YY ');
+	        timeFormat = 'HH:mm' + (match[4] ? ':ss' : '');
+
+	        // TODO: Replace the vanilla JS Date object with an indepentent day-of-week check.
+	        if (match[1]) { // day of week given
+	            var momentDate = new Date(match[2]);
+	            var momentDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][momentDate.getDay()];
+
+	            if (match[1].substr(0,3) !== momentDay) {
+	                getParsingFlags(config).weekdayMismatch = true;
+	                config._isValid = false;
+	                return;
+	            }
+	        }
+
+	        switch (match[5].length) {
+	            case 2: // military
+	                if (timezoneIndex === 0) {
+	                    timezone = ' +0000';
+	                } else {
+	                    timezoneIndex = military.indexOf(match[5][1].toUpperCase()) - 12;
+	                    timezone = ((timezoneIndex < 0) ? ' -' : ' +') +
+	                        (('' + timezoneIndex).replace(/^-?/, '0')).match(/..$/)[0] + '00';
+	                }
+	                break;
+	            case 4: // Zone
+	                timezone = timezones[match[5]];
+	                break;
+	            default: // UT or +/-9999
+	                timezone = timezones[' GMT'];
+	        }
+	        match[5] = timezone;
+	        config._i = match.splice(1).join('');
+	        tzFormat = ' ZZ';
+	        config._f = dayFormat + dateFormat + timeFormat + tzFormat;
+	        configFromStringAndFormat(config);
+	        getParsingFlags(config).rfc2822 = true;
+	    } else {
+	        config._isValid = false;
+	    }
+	}
+
 	// date from iso format or fallback
 	function configFromString(config) {
 	    var matched = aspNetJsonRegex.exec(config._i);
@@ -2158,13 +2244,24 @@ module.exports =
 	    configFromISO(config);
 	    if (config._isValid === false) {
 	        delete config._isValid;
-	        hooks.createFromInputFallback(config);
+	    } else {
+	        return;
 	    }
+
+	    configFromRFC2822(config);
+	    if (config._isValid === false) {
+	        delete config._isValid;
+	    } else {
+	        return;
+	    }
+
+	    // Final attempt, use Input Fallback
+	    hooks.createFromInputFallback(config);
 	}
 
 	hooks.createFromInputFallback = deprecate(
-	    'value provided is not in a recognized ISO format. moment construction falls back to js Date(), ' +
-	    'which is not reliable across all browsers and versions. Non ISO date formats are ' +
+	    'value provided is not in a recognized RFC2822 or ISO format. moment construction falls back to js Date(), ' +
+	    'which is not reliable across all browsers and versions. Non RFC2822/ISO date formats are ' +
 	    'discouraged and will be removed in an upcoming major release. Please refer to ' +
 	    'http://momentjs.com/guides/#/warnings/js-date/ for more info.',
 	    function (config) {
@@ -2211,10 +2308,10 @@ module.exports =
 	    }
 
 	    //if the day of the year is set, figure out what it is
-	    if (config._dayOfYear) {
+	    if (config._dayOfYear != null) {
 	        yearToUse = defaults(config._a[YEAR], currentDate[YEAR]);
 
-	        if (config._dayOfYear > daysInYear(yearToUse)) {
+	        if (config._dayOfYear > daysInYear(yearToUse) || config._dayOfYear === 0) {
 	            getParsingFlags(config)._overflowDayOfYear = true;
 	        }
 
@@ -2318,6 +2415,9 @@ module.exports =
 	// constant that refers to the ISO standard
 	hooks.ISO_8601 = function () {};
 
+	// constant that refers to the RFC 2822 form
+	hooks.RFC_2822 = function () {};
+
 	// date from string and format string
 	function configFromStringAndFormat(config) {
 	    // TODO: Move this to another part of the creation flow to prevent circular deps
@@ -2325,7 +2425,10 @@ module.exports =
 	        configFromISO(config);
 	        return;
 	    }
-
+	    if (config._f === hooks.RFC_2822) {
+	        configFromRFC2822(config);
+	        return;
+	    }
 	    config._a = [];
 	    getParsingFlags(config).empty = true;
 
@@ -2517,7 +2620,7 @@ module.exports =
 
 	function configFromInput(config) {
 	    var input = config._i;
-	    if (input === undefined) {
+	    if (isUndefined(input)) {
 	        config._d = new Date(hooks.now());
 	    } else if (isDate(input)) {
 	        config._d = new Date(input.valueOf());
@@ -2528,7 +2631,7 @@ module.exports =
 	            return parseInt(obj, 10);
 	        });
 	        configFromArray(config);
-	    } else if (typeof(input) === 'object') {
+	    } else if (isObject(input)) {
 	        configFromObject(config);
 	    } else if (isNumber(input)) {
 	        // from milliseconds
@@ -2629,6 +2732,38 @@ module.exports =
 	    return Date.now ? Date.now() : +(new Date());
 	};
 
+	var ordering = ['year', 'quarter', 'month', 'week', 'day', 'hour', 'minute', 'second', 'millisecond'];
+
+	function isDurationValid(m) {
+	    for (var key in m) {
+	        if (!(ordering.indexOf(key) !== -1 && (m[key] == null || !isNaN(m[key])))) {
+	            return false;
+	        }
+	    }
+
+	    var unitHasDecimal = false;
+	    for (var i = 0; i < ordering.length; ++i) {
+	        if (m[ordering[i]]) {
+	            if (unitHasDecimal) {
+	                return false; // only allow non-integers for smallest unit
+	            }
+	            if (parseFloat(m[ordering[i]]) !== toInt(m[ordering[i]])) {
+	                unitHasDecimal = true;
+	            }
+	        }
+	    }
+
+	    return true;
+	}
+
+	function isValid$1() {
+	    return this._isValid;
+	}
+
+	function createInvalid$1() {
+	    return createDuration(NaN);
+	}
+
 	function Duration (duration) {
 	    var normalizedInput = normalizeObjectUnits(duration),
 	        years = normalizedInput.year || 0,
@@ -2640,6 +2775,8 @@ module.exports =
 	        minutes = normalizedInput.minute || 0,
 	        seconds = normalizedInput.second || 0,
 	        milliseconds = normalizedInput.millisecond || 0;
+
+	    this._isValid = isDurationValid(normalizedInput);
 
 	    // representation for dateAddRemove
 	    this._milliseconds = +milliseconds +
@@ -2764,7 +2901,7 @@ module.exports =
 	// a second time. In case it wants us to change the offset again
 	// _changeInProgress == true case, then we have to adjust, because
 	// there is no such time in the given timezone.
-	function getSetOffset (input, keepLocalTime) {
+	function getSetOffset (input, keepLocalTime, keepMinutes) {
 	    var offset = this._offset || 0,
 	        localAdjust;
 	    if (!this.isValid()) {
@@ -2776,7 +2913,7 @@ module.exports =
 	            if (input === null) {
 	                return this;
 	            }
-	        } else if (Math.abs(input) < 16) {
+	        } else if (Math.abs(input) < 16 && !keepMinutes) {
 	            input = input * 60;
 	        }
 	        if (!this._isUTC && keepLocalTime) {
@@ -2834,7 +2971,7 @@ module.exports =
 
 	function setOffsetToParsedOffset () {
 	    if (this._tzm != null) {
-	        this.utcOffset(this._tzm);
+	        this.utcOffset(this._tzm, false, true);
 	    } else if (typeof this._i === 'string') {
 	        var tZone = offsetFromString(matchOffset, this._i);
 	        if (tZone != null) {
@@ -2966,6 +3103,7 @@ module.exports =
 	}
 
 	createDuration.fn = Duration.prototype;
+	createDuration.invalid = createInvalid$1;
 
 	function parseIso (inp, sign) {
 	    // We'd normally use ~~inp for this, but unfortunately it also
@@ -3202,18 +3340,19 @@ module.exports =
 	    return this.clone().locale('en').format('ddd MMM DD YYYY HH:mm:ss [GMT]ZZ');
 	}
 
-	function toISOString () {
+	function toISOString() {
+	    if (!this.isValid()) {
+	        return null;
+	    }
 	    var m = this.clone().utc();
-	    if (0 < m.year() && m.year() <= 9999) {
-	        if (isFunction(Date.prototype.toISOString)) {
-	            // native implementation is ~50x faster, use it when we can
-	            return this.toDate().toISOString();
-	        } else {
-	            return formatMoment(m, 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
-	        }
-	    } else {
+	    if (m.year() < 0 || m.year() > 9999) {
 	        return formatMoment(m, 'YYYYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
 	    }
+	    if (isFunction(Date.prototype.toISOString)) {
+	        // native implementation is ~50x faster, use it when we can
+	        return this.toDate().toISOString();
+	    }
+	    return formatMoment(m, 'YYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
 	}
 
 	/**
@@ -3233,7 +3372,7 @@ module.exports =
 	        zone = 'Z';
 	    }
 	    var prefix = '[' + func + '("]';
-	    var year = (0 < this.year() && this.year() <= 9999) ? 'YYYY' : 'YYYYYY';
+	    var year = (0 <= this.year() && this.year() <= 9999) ? 'YYYY' : 'YYYYYY';
 	    var datetime = '-MM-DD[T]HH:mm:ss.SSS';
 	    var suffix = zone + '[")]';
 
@@ -3401,7 +3540,7 @@ module.exports =
 	    return this.isValid() ? this.toISOString() : null;
 	}
 
-	function isValid$1 () {
+	function isValid$2 () {
 	    return isValid(this);
 	}
 
@@ -3561,7 +3700,10 @@ module.exports =
 	addRegexToken('D',  match1to2);
 	addRegexToken('DD', match1to2, match2);
 	addRegexToken('Do', function (isStrict, locale) {
-	    return isStrict ? locale._ordinalParse : locale._ordinalParseLenient;
+	    // TODO: Remove "ordinalParse" fallback in next major release.
+	    return isStrict ?
+	      (locale._dayOfMonthOrdinalParse || locale._ordinalParse) :
+	      locale._dayOfMonthOrdinalParseLenient;
 	});
 
 	addParseToken(['D', 'DD'], DATE);
@@ -3741,7 +3883,7 @@ module.exports =
 	proto.isSame            = isSame;
 	proto.isSameOrAfter     = isSameOrAfter;
 	proto.isSameOrBefore    = isSameOrBefore;
-	proto.isValid           = isValid$1;
+	proto.isValid           = isValid$2;
 	proto.lang              = lang;
 	proto.locale            = locale;
 	proto.localeData        = localeData;
@@ -3966,7 +4108,7 @@ module.exports =
 	}
 
 	getSetGlobalLocale('en', {
-	    ordinalParse: /\d{1,2}(th|st|nd|rd)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(th|st|nd|rd)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (toInt(number % 100 / 10) === 1) ? 'th' :
@@ -4087,6 +4229,9 @@ module.exports =
 	}
 
 	function as (units) {
+	    if (!this.isValid()) {
+	        return NaN;
+	    }
 	    var days;
 	    var months;
 	    var milliseconds = this._milliseconds;
@@ -4115,6 +4260,9 @@ module.exports =
 
 	// TODO: Use this.as('ms')?
 	function valueOf$1 () {
+	    if (!this.isValid()) {
+	        return NaN;
+	    }
 	    return (
 	        this._milliseconds +
 	        this._days * 864e5 +
@@ -4140,12 +4288,12 @@ module.exports =
 
 	function get$2 (units) {
 	    units = normalizeUnits(units);
-	    return this[units + 's']();
+	    return this.isValid() ? this[units + 's']() : NaN;
 	}
 
 	function makeGetter(name) {
 	    return function () {
-	        return this._data[name];
+	        return this.isValid() ? this._data[name] : NaN;
 	    };
 	}
 
@@ -4163,11 +4311,12 @@ module.exports =
 
 	var round = Math.round;
 	var thresholds = {
-	    s: 45,  // seconds to minute
-	    m: 45,  // minutes to hour
-	    h: 22,  // hours to day
-	    d: 26,  // days to month
-	    M: 11   // months to year
+	    ss: 44,         // a few seconds to seconds
+	    s : 45,         // seconds to minute
+	    m : 45,         // minutes to hour
+	    h : 22,         // hours to day
+	    d : 26,         // days to month
+	    M : 11          // months to year
 	};
 
 	// helper function for moment.fn.from, moment.fn.fromNow, and moment.duration.fn.humanize
@@ -4184,16 +4333,17 @@ module.exports =
 	    var months   = round(duration.as('M'));
 	    var years    = round(duration.as('y'));
 
-	    var a = seconds < thresholds.s && ['s', seconds]  ||
-	            minutes <= 1           && ['m']           ||
-	            minutes < thresholds.m && ['mm', minutes] ||
-	            hours   <= 1           && ['h']           ||
-	            hours   < thresholds.h && ['hh', hours]   ||
-	            days    <= 1           && ['d']           ||
-	            days    < thresholds.d && ['dd', days]    ||
-	            months  <= 1           && ['M']           ||
-	            months  < thresholds.M && ['MM', months]  ||
-	            years   <= 1           && ['y']           || ['yy', years];
+	    var a = seconds <= thresholds.ss && ['s', seconds]  ||
+	            seconds < thresholds.s   && ['ss', seconds] ||
+	            minutes <= 1             && ['m']           ||
+	            minutes < thresholds.m   && ['mm', minutes] ||
+	            hours   <= 1             && ['h']           ||
+	            hours   < thresholds.h   && ['hh', hours]   ||
+	            days    <= 1             && ['d']           ||
+	            days    < thresholds.d   && ['dd', days]    ||
+	            months  <= 1             && ['M']           ||
+	            months  < thresholds.M   && ['MM', months]  ||
+	            years   <= 1             && ['y']           || ['yy', years];
 
 	    a[2] = withoutSuffix;
 	    a[3] = +posNegDuration > 0;
@@ -4222,10 +4372,17 @@ module.exports =
 	        return thresholds[threshold];
 	    }
 	    thresholds[threshold] = limit;
+	    if (threshold === 's') {
+	        thresholds.ss = limit - 1;
+	    }
 	    return true;
 	}
 
 	function humanize (withSuffix) {
+	    if (!this.isValid()) {
+	        return this.localeData().invalidDate();
+	    }
+
 	    var locale = this.localeData();
 	    var output = relativeTime$1(this, !withSuffix, locale);
 
@@ -4246,6 +4403,10 @@ module.exports =
 	    // This is because there is no context-free conversion between hours and days
 	    // (think of clock changes)
 	    // and also not between days and months (28-31 days per month)
+	    if (!this.isValid()) {
+	        return this.localeData().invalidDate();
+	    }
+
 	    var seconds = abs$1(this._milliseconds) / 1000;
 	    var days         = abs$1(this._days);
 	    var months       = abs$1(this._months);
@@ -4290,6 +4451,7 @@ module.exports =
 
 	var proto$2 = Duration.prototype;
 
+	proto$2.isValid        = isValid$1;
 	proto$2.abs            = abs;
 	proto$2.add            = add$1;
 	proto$2.subtract       = subtract$1;
@@ -4345,7 +4507,7 @@ module.exports =
 	// Side effect imports
 
 
-	hooks.version = '2.17.1';
+	hooks.version = '2.18.1';
 
 	setHookCallback(createLocal);
 
@@ -4381,20 +4543,20 @@ module.exports =
 
 	})));
 
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(360)(module)))
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(335)(module)))
 
-/***/ },
+/***/ }),
 /* 2 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
-	module.exports = __webpack_require__(31);
+	module.exports = __webpack_require__(30);
 
 
-/***/ },
+/***/ }),
 /* 3 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -4452,9 +4614,9 @@ module.exports =
 
 	module.exports = invariant;
 
-/***/ },
+/***/ }),
 /* 4 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-2015, Facebook, Inc.
@@ -4523,9 +4685,9 @@ module.exports =
 
 	module.exports = warning;
 
-/***/ },
+/***/ }),
 /* 5 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -4566,9 +4728,9 @@ module.exports =
 
 	module.exports = reactProdInvariant;
 
-/***/ },
+/***/ }),
 /* 6 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	/*
 	object-assign
@@ -4662,9 +4824,9 @@ module.exports =
 	};
 
 
-/***/ },
+/***/ }),
 /* 7 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -4680,8 +4842,8 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var DOMProperty = __webpack_require__(35);
-	var ReactDOMComponentFlags = __webpack_require__(332);
+	var DOMProperty = __webpack_require__(34);
+	var ReactDOMComponentFlags = __webpack_require__(304);
 
 	var invariant = __webpack_require__(3);
 
@@ -4861,9 +5023,9 @@ module.exports =
 
 	module.exports = ReactDOMComponentTree;
 
-/***/ },
+/***/ }),
 /* 8 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -4902,9 +5064,9 @@ module.exports =
 	  warned = {};
 	}
 
-/***/ },
+/***/ }),
 /* 9 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -4942,9 +5104,9 @@ module.exports =
 
 	module.exports = ExecutionEnvironment;
 
-/***/ },
+/***/ }),
 /* 10 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-2015, Facebook, Inc.
@@ -5001,9 +5163,9 @@ module.exports =
 	module.exports = invariant;
 
 
-/***/ },
+/***/ }),
 /* 11 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-2015, Facebook, Inc.
@@ -5069,9 +5231,9 @@ module.exports =
 	module.exports = warning;
 
 
-/***/ },
+/***/ }),
 /* 12 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -5112,9 +5274,9 @@ module.exports =
 
 	module.exports = emptyFunction;
 
-/***/ },
+/***/ }),
 /* 13 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -5134,15 +5296,15 @@ module.exports =
 	var debugTool = null;
 
 	if (true) {
-	  var ReactDebugTool = __webpack_require__(505);
+	  var ReactDebugTool = __webpack_require__(483);
 	  debugTool = ReactDebugTool;
 	}
 
 	module.exports = { debugTool: debugTool };
 
-/***/ },
+/***/ }),
 /* 14 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -5157,7 +5319,7 @@ module.exports =
 
 	'use strict';
 
-	var _prodInvariant = __webpack_require__(27);
+	var _prodInvariant = __webpack_require__(31);
 
 	var ReactCurrentOwner = __webpack_require__(18);
 
@@ -5170,11 +5332,11 @@ module.exports =
 	  var hasOwnProperty = Object.prototype.hasOwnProperty;
 	  var reIsNative = RegExp('^' + funcToString
 	  // Take an example native function source for comparison
-	  .call(hasOwnProperty)
+	  .call(hasOwnProperty
 	  // Strip regex characters so we can use it for regex
-	  .replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+	  ).replace(/[\\^$.*+?()[\]{}|]/g, '\\$&'
 	  // Remove hasOwnProperty from the template to make it generic
-	  .replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$');
+	  ).replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$');
 	  try {
 	    var source = funcToString.call(fn);
 	    return reIsNative.test(source);
@@ -5473,14 +5635,59 @@ module.exports =
 
 
 	  getRootIDs: getRootIDs,
-	  getRegisteredIDs: getItemIDs
+	  getRegisteredIDs: getItemIDs,
+
+	  pushNonStandardWarningStack: function (isCreatingElement, currentSource) {
+	    if (typeof console.reactStack !== 'function') {
+	      return;
+	    }
+
+	    var stack = [];
+	    var currentOwner = ReactCurrentOwner.current;
+	    var id = currentOwner && currentOwner._debugID;
+
+	    try {
+	      if (isCreatingElement) {
+	        stack.push({
+	          name: id ? ReactComponentTreeHook.getDisplayName(id) : null,
+	          fileName: currentSource ? currentSource.fileName : null,
+	          lineNumber: currentSource ? currentSource.lineNumber : null
+	        });
+	      }
+
+	      while (id) {
+	        var element = ReactComponentTreeHook.getElement(id);
+	        var parentID = ReactComponentTreeHook.getParentID(id);
+	        var ownerID = ReactComponentTreeHook.getOwnerID(id);
+	        var ownerName = ownerID ? ReactComponentTreeHook.getDisplayName(ownerID) : null;
+	        var source = element && element._source;
+	        stack.push({
+	          name: ownerName,
+	          fileName: source ? source.fileName : null,
+	          lineNumber: source ? source.lineNumber : null
+	        });
+	        id = parentID;
+	      }
+	    } catch (err) {
+	      // Internal state is messed up.
+	      // Stop building the stack (it's just a nice to have).
+	    }
+
+	    console.reactStack(stack);
+	  },
+	  popNonStandardWarningStack: function () {
+	    if (typeof console.reactStackEnd !== 'function') {
+	      return;
+	    }
+	    console.reactStackEnd();
+	  }
 	};
 
 	module.exports = ReactComponentTreeHook;
 
-/***/ },
+/***/ }),
 /* 15 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -5497,11 +5704,11 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var CallbackQueue = __webpack_require__(330);
+	var CallbackQueue = __webpack_require__(302);
 	var PooledClass = __webpack_require__(24);
-	var ReactFeatureFlags = __webpack_require__(510);
-	var ReactReconciler = __webpack_require__(38);
-	var Transaction = __webpack_require__(152);
+	var ReactFeatureFlags = __webpack_require__(488);
+	var ReactReconciler = __webpack_require__(37);
+	var Transaction = __webpack_require__(159);
 
 	var invariant = __webpack_require__(3);
 
@@ -5733,9 +5940,9 @@ module.exports =
 
 	module.exports = ReactUpdates;
 
-/***/ },
+/***/ }),
 /* 16 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -5841,7 +6048,6 @@ module.exports =
 	}
 
 	_assign(SyntheticEvent.prototype, {
-
 	  preventDefault: function () {
 	    this.defaultPrevented = true;
 	    var event = this.nativeEvent;
@@ -5851,8 +6057,8 @@ module.exports =
 
 	    if (event.preventDefault) {
 	      event.preventDefault();
+	      // eslint-disable-next-line valid-typeof
 	    } else if (typeof event.returnValue !== 'unknown') {
-	      // eslint-disable-line valid-typeof
 	      event.returnValue = false;
 	    }
 	    this.isDefaultPrevented = emptyFunction.thatReturnsTrue;
@@ -5866,8 +6072,8 @@ module.exports =
 
 	    if (event.stopPropagation) {
 	      event.stopPropagation();
+	      // eslint-disable-next-line valid-typeof
 	    } else if (typeof event.cancelBubble !== 'unknown') {
-	      // eslint-disable-line valid-typeof
 	      // The ChangeEventPlugin registers a "propertychange" event for
 	      // IE. This event does not support bubbling or cancelling, and
 	      // any references to cancelBubble throw "Member not found".  A
@@ -5916,7 +6122,6 @@ module.exports =
 	      Object.defineProperty(this, 'stopPropagation', getPooledWarningPropertyDefinition('stopPropagation', emptyFunction));
 	    }
 	  }
-
 	});
 
 	SyntheticEvent.Interface = EventInterface;
@@ -5932,7 +6137,7 @@ module.exports =
 	        return new Proxy(constructor.apply(that, args), {
 	          set: function (target, prop, value) {
 	            if (prop !== 'isPersistent' && !target.constructor.Interface.hasOwnProperty(prop) && shouldBeReleasedProperties.indexOf(prop) === -1) {
-	               true ? warning(didWarnForAddedNewProperty || target.isPersistent(), 'This synthetic event is reused for performance reasons. If you\'re ' + 'seeing this, you\'re adding a new property in the synthetic event object. ' + 'The property is never released. See ' + 'https://fb.me/react-event-pooling for more information.') : void 0;
+	               true ? warning(didWarnForAddedNewProperty || target.isPersistent(), "This synthetic event is reused for performance reasons. If you're " + "seeing this, you're adding a new property in the synthetic event object. " + 'The property is never released. See ' + 'https://fb.me/react-event-pooling for more information.') : void 0;
 	              didWarnForAddedNewProperty = true;
 	            }
 	            target[prop] = value;
@@ -6001,13 +6206,13 @@ module.exports =
 
 	  function warn(action, result) {
 	    var warningCondition = false;
-	     true ? warning(warningCondition, 'This synthetic event is reused for performance reasons. If you\'re seeing this, ' + 'you\'re %s `%s` on a released/nullified synthetic event. %s. ' + 'If you must keep the original synthetic event around, use event.persist(). ' + 'See https://fb.me/react-event-pooling for more information.', action, propName, result) : void 0;
+	     true ? warning(warningCondition, "This synthetic event is reused for performance reasons. If you're seeing this, " + "you're %s `%s` on a released/nullified synthetic event. %s. " + 'If you must keep the original synthetic event around, use event.persist(). ' + 'See https://fb.me/react-event-pooling for more information.', action, propName, result) : void 0;
 	  }
 	}
 
-/***/ },
+/***/ }),
 /* 17 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -6103,9 +6308,9 @@ module.exports =
 	  return routes;
 	}
 
-/***/ },
+/***/ }),
 /* 18 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -6127,20 +6332,18 @@ module.exports =
 	 * currently being constructed.
 	 */
 	var ReactCurrentOwner = {
-
 	  /**
 	   * @internal
 	   * @type {ReactComponent}
 	   */
 	  current: null
-
 	};
 
 	module.exports = ReactCurrentOwner;
 
-/***/ },
+/***/ }),
 /* 19 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -6154,7 +6357,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _startsWith = __webpack_require__(472);
+	var _startsWith = __webpack_require__(448);
 
 	var _startsWith2 = _interopRequireDefault(_startsWith);
 
@@ -6184,9 +6387,9 @@ module.exports =
 
 	exports.default = Link;
 
-/***/ },
+/***/ }),
 /* 20 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	/**
 	 * Indicates that navigation was caused by a call to history.push.
@@ -6220,9 +6423,9 @@ module.exports =
 	  POP: POP
 	};
 
-/***/ },
+/***/ }),
 /* 21 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -6272,9 +6475,9 @@ module.exports =
 	  };
 	}
 
-/***/ },
+/***/ }),
 /* 22 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -6296,9 +6499,9 @@ module.exports =
 	exports['default'] = deprecate;
 	module.exports = exports['default'];
 
-/***/ },
+/***/ }),
 /* 23 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	var __WEBPACK_AMD_DEFINE_RESULT__;/* WEBPACK VAR INJECTION */(function(module) {/**
 	 * @license
@@ -23385,13 +23588,13 @@ module.exports =
 	  }
 	}.call(this));
 
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(360)(module)))
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(335)(module)))
 
-/***/ },
+/***/ }),
 /* 24 */
-[585, 5],
+[564, 5],
 /* 25 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -23426,9 +23629,9 @@ module.exports =
 	var route = exports.route = oneOfType([object, element]);
 	var routes = exports.routes = oneOfType([route, arrayOf(route)]);
 
-/***/ },
+/***/ }),
 /* 26 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -23447,10 +23650,10 @@ module.exports =
 	var ReactCurrentOwner = __webpack_require__(18);
 
 	var warning = __webpack_require__(4);
-	var canDefineProperty = __webpack_require__(188);
+	var canDefineProperty = __webpack_require__(163);
 	var hasOwnProperty = Object.prototype.hasOwnProperty;
 
-	var REACT_ELEMENT_TYPE = __webpack_require__(357);
+	var REACT_ELEMENT_TYPE = __webpack_require__(331);
 
 	var RESERVED_PROPS = {
 	  key: true,
@@ -23771,11 +23974,9 @@ module.exports =
 
 	module.exports = ReactElement;
 
-/***/ },
+/***/ }),
 /* 27 */
-5,
-/* 28 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -23802,9 +24003,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 29 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 28 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -23818,9 +24019,9 @@ module.exports =
 
 	var _warning2 = _interopRequireDefault(_warning);
 
-	var _queryString = __webpack_require__(480);
+	var _queryString = __webpack_require__(458);
 
-	var _runTransitionHook = __webpack_require__(162);
+	var _runTransitionHook = __webpack_require__(170);
 
 	var _runTransitionHook2 = _interopRequireDefault(_runTransitionHook);
 
@@ -23983,9 +24184,9 @@ module.exports =
 	exports['default'] = useQueries;
 	module.exports = exports['default'];
 
-/***/ },
-/* 30 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 29 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -24200,9 +24401,9 @@ module.exports =
 	  return pathname.replace(/\/+/g, '/');
 	}
 
-/***/ },
-/* 31 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 30 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -24218,42 +24419,52 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var ReactChildren = __webpack_require__(572);
-	var ReactComponent = __webpack_require__(185);
-	var ReactPureComponent = __webpack_require__(576);
-	var ReactClass = __webpack_require__(573);
-	var ReactDOMFactories = __webpack_require__(574);
+	var ReactBaseClasses = __webpack_require__(330);
+	var ReactChildren = __webpack_require__(549);
+	var ReactDOMFactories = __webpack_require__(550);
 	var ReactElement = __webpack_require__(26);
-	var ReactPropTypes = __webpack_require__(575);
-	var ReactVersion = __webpack_require__(577);
+	var ReactPropTypes = __webpack_require__(552);
+	var ReactVersion = __webpack_require__(554);
 
-	var onlyChild = __webpack_require__(579);
-	var warning = __webpack_require__(4);
+	var createReactClass = __webpack_require__(556);
+	var onlyChild = __webpack_require__(558);
 
 	var createElement = ReactElement.createElement;
 	var createFactory = ReactElement.createFactory;
 	var cloneElement = ReactElement.cloneElement;
 
 	if (true) {
-	  var ReactElementValidator = __webpack_require__(358);
+	  var lowPriorityWarning = __webpack_require__(193);
+	  var canDefineProperty = __webpack_require__(163);
+	  var ReactElementValidator = __webpack_require__(332);
+	  var didWarnPropTypesDeprecated = false;
 	  createElement = ReactElementValidator.createElement;
 	  createFactory = ReactElementValidator.createFactory;
 	  cloneElement = ReactElementValidator.cloneElement;
 	}
 
 	var __spread = _assign;
+	var createMixin = function (mixin) {
+	  return mixin;
+	};
 
 	if (true) {
-	  var warned = false;
+	  var warnedForSpread = false;
+	  var warnedForCreateMixin = false;
 	  __spread = function () {
-	     true ? warning(warned, 'React.__spread is deprecated and should not be used. Use ' + 'Object.assign directly or another helper function with similar ' + 'semantics. You may be seeing this warning due to your compiler. ' + 'See https://fb.me/react-spread-deprecation for more details.') : void 0;
-	    warned = true;
+	    lowPriorityWarning(warnedForSpread, 'React.__spread is deprecated and should not be used. Use ' + 'Object.assign directly or another helper function with similar ' + 'semantics. You may be seeing this warning due to your compiler. ' + 'See https://fb.me/react-spread-deprecation for more details.');
+	    warnedForSpread = true;
 	    return _assign.apply(null, arguments);
+	  };
+
+	  createMixin = function (mixin) {
+	    lowPriorityWarning(warnedForCreateMixin, 'React.createMixin is deprecated and should not be used. ' + 'In React v16.0, it will be removed. ' + 'You can use this mixin directly instead. ' + 'See https://fb.me/createmixin-was-never-implemented for more info.');
+	    warnedForCreateMixin = true;
+	    return mixin;
 	  };
 	}
 
 	var React = {
-
 	  // Modern
 
 	  Children: {
@@ -24264,8 +24475,8 @@ module.exports =
 	    only: onlyChild
 	  },
 
-	  Component: ReactComponent,
-	  PureComponent: ReactPureComponent,
+	  Component: ReactBaseClasses.Component,
+	  PureComponent: ReactBaseClasses.PureComponent,
 
 	  createElement: createElement,
 	  cloneElement: cloneElement,
@@ -24274,12 +24485,9 @@ module.exports =
 	  // Classic
 
 	  PropTypes: ReactPropTypes,
-	  createClass: ReactClass.createClass,
+	  createClass: createReactClass,
 	  createFactory: createFactory,
-	  createMixin: function (mixin) {
-	    // Currently a noop. Will be used to validate and trace mixins.
-	    return mixin;
-	  },
+	  createMixin: createMixin,
 
 	  // This looks DOM specific but these are actually isomorphic helpers
 	  // since they are just generating DOM strings.
@@ -24291,35 +24499,49 @@ module.exports =
 	  __spread: __spread
 	};
 
-	module.exports = React;
-
-/***/ },
-/* 32 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright (c) 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 */
-
-	'use strict';
-
-	var emptyObject = {};
-
 	if (true) {
-	  Object.freeze(emptyObject);
+	  var warnedForCreateClass = false;
+	  if (canDefineProperty) {
+	    Object.defineProperty(React, 'PropTypes', {
+	      get: function () {
+	        lowPriorityWarning(didWarnPropTypesDeprecated, 'Accessing PropTypes via the main React package is deprecated,' + ' and will be removed in  React v16.0.' + ' Use the latest available v15.* prop-types package from npm instead.' + ' For info on usage, compatibility, migration and more, see ' + 'https://fb.me/prop-types-docs');
+	        didWarnPropTypesDeprecated = true;
+	        return ReactPropTypes;
+	      }
+	    });
+
+	    Object.defineProperty(React, 'createClass', {
+	      get: function () {
+	        lowPriorityWarning(warnedForCreateClass, 'Accessing createClass via the main React package is deprecated,' + ' and will be removed in React v16.0.' + " Use a plain JavaScript class instead. If you're not yet " + 'ready to migrate, create-react-class v15.* is available ' + 'on npm as a temporary, drop-in replacement. ' + 'For more info see https://fb.me/react-create-class');
+	        warnedForCreateClass = true;
+	        return createReactClass;
+	      }
+	    });
+	  }
+
+	  // React.DOM factories are deprecated. Wrap these methods so that
+	  // invocations of the React.DOM namespace and alert users to switch
+	  // to the `react-dom-factories` package.
+	  React.DOM = {};
+	  var warnedForFactories = false;
+	  Object.keys(ReactDOMFactories).forEach(function (factory) {
+	    React.DOM[factory] = function () {
+	      if (!warnedForFactories) {
+	        lowPriorityWarning(false, 'Accessing factories like React.DOM.%s has been deprecated ' + 'and will be removed in v16.0+. Use the ' + 'react-dom-factories package instead. ' + ' Version 1.0 provides a drop-in replacement.' + ' For more info, see https://fb.me/react-dom-factories', factory);
+	        warnedForFactories = true;
+	      }
+	      return ReactDOMFactories[factory].apply(ReactDOMFactories, arguments);
+	    };
+	  });
 	}
 
-	module.exports = emptyObject;
+	module.exports = React;
 
-/***/ },
-/* 33 */
-/***/ function(module, exports) {
+/***/ }),
+/* 31 */
+5,
+/* 32 */
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -24327,9 +24549,9 @@ module.exports =
 	var canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
 	exports.canUseDOM = canUseDOM;
 
-/***/ },
-/* 34 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 33 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -24343,11 +24565,11 @@ module.exports =
 
 	'use strict';
 
-	var DOMNamespaces = __webpack_require__(166);
-	var setInnerHTML = __webpack_require__(180);
+	var DOMNamespaces = __webpack_require__(174);
+	var setInnerHTML = __webpack_require__(188);
 
-	var createMicrosoftUnsafeLocalFunction = __webpack_require__(175);
-	var setTextContent = __webpack_require__(347);
+	var createMicrosoftUnsafeLocalFunction = __webpack_require__(183);
+	var setTextContent = __webpack_require__(320);
 
 	var ELEMENT_NODE_TYPE = 1;
 	var DOCUMENT_FRAGMENT_NODE_TYPE = 11;
@@ -24449,9 +24671,9 @@ module.exports =
 
 	module.exports = DOMLazyTree;
 
-/***/ },
-/* 35 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 34 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -24591,7 +24813,6 @@ module.exports =
 	 * @see http://jsperf.com/key-missing
 	 */
 	var DOMProperty = {
-
 	  ID_ATTRIBUTE_NAME: 'data-reactid',
 	  ROOT_ATTRIBUTE_NAME: 'data-reactroot',
 
@@ -24663,9 +24884,9 @@ module.exports =
 
 	module.exports = DOMProperty;
 
-/***/ },
-/* 36 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 35 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -24681,12 +24902,12 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var EventPluginRegistry = __webpack_require__(167);
-	var EventPluginUtils = __webpack_require__(168);
-	var ReactErrorUtils = __webpack_require__(173);
+	var EventPluginRegistry = __webpack_require__(175);
+	var EventPluginUtils = __webpack_require__(176);
+	var ReactErrorUtils = __webpack_require__(181);
 
-	var accumulateInto = __webpack_require__(342);
-	var forEachAccumulated = __webpack_require__(343);
+	var accumulateInto = __webpack_require__(314);
+	var forEachAccumulated = __webpack_require__(315);
 	var invariant = __webpack_require__(3);
 
 	/**
@@ -24774,12 +24995,10 @@ module.exports =
 	 * @public
 	 */
 	var EventPluginHub = {
-
 	  /**
 	   * Methods for injecting dependencies.
 	   */
 	  injection: {
-
 	    /**
 	     * @param {array} InjectedEventPluginOrder
 	     * @public
@@ -24790,7 +25009,6 @@ module.exports =
 	     * @param {object} injectedNamesToPlugins Map from names to plugin modules.
 	     */
 	    injectEventPluginsByName: EventPluginRegistry.injectEventPluginsByName
-
 	  },
 
 	  /**
@@ -24940,14 +25158,13 @@ module.exports =
 	  __getListenerBank: function () {
 	    return listenerBank;
 	  }
-
 	};
 
 	module.exports = EventPluginHub;
 
-/***/ },
-/* 37 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 36 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -24961,11 +25178,11 @@ module.exports =
 
 	'use strict';
 
-	var EventPluginHub = __webpack_require__(36);
-	var EventPluginUtils = __webpack_require__(168);
+	var EventPluginHub = __webpack_require__(35);
+	var EventPluginUtils = __webpack_require__(176);
 
-	var accumulateInto = __webpack_require__(342);
-	var forEachAccumulated = __webpack_require__(343);
+	var accumulateInto = __webpack_require__(314);
+	var forEachAccumulated = __webpack_require__(315);
 	var warning = __webpack_require__(4);
 
 	var getListener = EventPluginHub.getListener;
@@ -25083,9 +25300,9 @@ module.exports =
 
 	module.exports = EventPropagators;
 
-/***/ },
-/* 38 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 37 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -25099,7 +25316,7 @@ module.exports =
 
 	'use strict';
 
-	var ReactRef = __webpack_require__(520);
+	var ReactRef = __webpack_require__(498);
 	var ReactInstrumentation = __webpack_require__(13);
 
 	var warning = __webpack_require__(4);
@@ -25113,7 +25330,6 @@ module.exports =
 	}
 
 	var ReactReconciler = {
-
 	  /**
 	   * Initializes the component, renders markup, and registers event listeners.
 	   *
@@ -25125,8 +25341,8 @@ module.exports =
 	   * @final
 	   * @internal
 	   */
-	  mountComponent: function (internalInstance, transaction, hostParent, hostContainerInfo, context, parentDebugID // 0 in production and for roots
-	  ) {
+	  mountComponent: function (internalInstance, transaction, hostParent, hostContainerInfo, context, parentDebugID) // 0 in production and for roots
+	  {
 	    if (true) {
 	      if (internalInstance._debugID !== 0) {
 	        ReactInstrumentation.debugTool.onBeforeMountComponent(internalInstance._debugID, internalInstance._currentElement, parentDebugID);
@@ -25250,14 +25466,13 @@ module.exports =
 	      }
 	    }
 	  }
-
 	};
 
 	module.exports = ReactReconciler;
 
-/***/ },
-/* 39 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 38 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -25273,7 +25488,7 @@ module.exports =
 
 	var SyntheticEvent = __webpack_require__(16);
 
-	var getEventTarget = __webpack_require__(178);
+	var getEventTarget = __webpack_require__(186);
 
 	/**
 	 * @interface UIEvent
@@ -25318,9 +25533,9 @@ module.exports =
 
 	module.exports = SyntheticUIEvent;
 
-/***/ },
-/* 40 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 39 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -25336,7 +25551,7 @@ module.exports =
 	  }
 	});
 
-	var _PropTypes2 = __webpack_require__(183);
+	var _PropTypes2 = __webpack_require__(191);
 
 	Object.defineProperty(exports, 'locationShape', {
 	  enumerable: true,
@@ -25351,7 +25566,7 @@ module.exports =
 	  }
 	});
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	Object.defineProperty(exports, 'formatPattern', {
 	  enumerable: true,
@@ -25360,85 +25575,85 @@ module.exports =
 	  }
 	});
 
-	var _Router2 = __webpack_require__(556);
+	var _Router2 = __webpack_require__(533);
 
 	var _Router3 = _interopRequireDefault(_Router2);
 
-	var _Link2 = __webpack_require__(350);
+	var _Link2 = __webpack_require__(323);
 
 	var _Link3 = _interopRequireDefault(_Link2);
 
-	var _IndexLink2 = __webpack_require__(550);
+	var _IndexLink2 = __webpack_require__(527);
 
 	var _IndexLink3 = _interopRequireDefault(_IndexLink2);
 
-	var _withRouter2 = __webpack_require__(569);
+	var _withRouter2 = __webpack_require__(546);
 
 	var _withRouter3 = _interopRequireDefault(_withRouter2);
 
-	var _IndexRedirect2 = __webpack_require__(551);
+	var _IndexRedirect2 = __webpack_require__(528);
 
 	var _IndexRedirect3 = _interopRequireDefault(_IndexRedirect2);
 
-	var _IndexRoute2 = __webpack_require__(552);
+	var _IndexRoute2 = __webpack_require__(529);
 
 	var _IndexRoute3 = _interopRequireDefault(_IndexRoute2);
 
-	var _Redirect2 = __webpack_require__(351);
+	var _Redirect2 = __webpack_require__(324);
 
 	var _Redirect3 = _interopRequireDefault(_Redirect2);
 
-	var _Route2 = __webpack_require__(554);
+	var _Route2 = __webpack_require__(531);
 
 	var _Route3 = _interopRequireDefault(_Route2);
 
-	var _History2 = __webpack_require__(549);
+	var _History2 = __webpack_require__(526);
 
 	var _History3 = _interopRequireDefault(_History2);
 
-	var _Lifecycle2 = __webpack_require__(553);
+	var _Lifecycle2 = __webpack_require__(530);
 
 	var _Lifecycle3 = _interopRequireDefault(_Lifecycle2);
 
-	var _RouteContext2 = __webpack_require__(555);
+	var _RouteContext2 = __webpack_require__(532);
 
 	var _RouteContext3 = _interopRequireDefault(_RouteContext2);
 
-	var _useRoutes2 = __webpack_require__(568);
+	var _useRoutes2 = __webpack_require__(545);
 
 	var _useRoutes3 = _interopRequireDefault(_useRoutes2);
 
-	var _RouterContext2 = __webpack_require__(154);
+	var _RouterContext2 = __webpack_require__(161);
 
 	var _RouterContext3 = _interopRequireDefault(_RouterContext2);
 
-	var _RoutingContext2 = __webpack_require__(557);
+	var _RoutingContext2 = __webpack_require__(534);
 
 	var _RoutingContext3 = _interopRequireDefault(_RoutingContext2);
 
 	var _PropTypes3 = _interopRequireDefault(_PropTypes2);
 
-	var _match2 = __webpack_require__(566);
+	var _match2 = __webpack_require__(543);
 
 	var _match3 = _interopRequireDefault(_match2);
 
-	var _useRouterHistory2 = __webpack_require__(356);
+	var _useRouterHistory2 = __webpack_require__(329);
 
 	var _useRouterHistory3 = _interopRequireDefault(_useRouterHistory2);
 
-	var _applyRouterMiddleware2 = __webpack_require__(559);
+	var _applyRouterMiddleware2 = __webpack_require__(536);
 
 	var _applyRouterMiddleware3 = _interopRequireDefault(_applyRouterMiddleware2);
 
-	var _browserHistory2 = __webpack_require__(560);
+	var _browserHistory2 = __webpack_require__(537);
 
 	var _browserHistory3 = _interopRequireDefault(_browserHistory2);
 
-	var _hashHistory2 = __webpack_require__(564);
+	var _hashHistory2 = __webpack_require__(541);
 
 	var _hashHistory3 = _interopRequireDefault(_hashHistory2);
 
-	var _createMemoryHistory2 = __webpack_require__(353);
+	var _createMemoryHistory2 = __webpack_require__(326);
 
 	var _createMemoryHistory3 = _interopRequireDefault(_createMemoryHistory2);
 
@@ -25479,9 +25694,9 @@ module.exports =
 	exports.hashHistory = _hashHistory3.default;
 	exports.createMemoryHistory = _createMemoryHistory3.default;
 
-/***/ },
-/* 41 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 40 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -25489,7 +25704,7 @@ module.exports =
 	  value: true
 	});
 
-	var _Interactive = __webpack_require__(386);
+	var _Interactive = __webpack_require__(361);
 
 	var _Interactive2 = _interopRequireDefault(_Interactive);
 
@@ -25497,9 +25712,33 @@ module.exports =
 
 	exports.default = _Interactive2.default;
 
-/***/ },
+/***/ }),
+/* 41 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright (c) 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var emptyObject = {};
+
+	if (true) {
+	  Object.freeze(emptyObject);
+	}
+
+	module.exports = emptyObject;
+
+/***/ }),
 /* 42 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -25577,9 +25816,9 @@ module.exports =
 	  return ua.indexOf('Firefox') === -1;
 	}
 
-/***/ },
+/***/ }),
 /* 43 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Afrikaans [af]
@@ -25640,7 +25879,7 @@ module.exports =
 	        y : '\'n jaar',
 	        yy : '%d jaar'
 	    },
-	    ordinalParse: /\d{1,2}(ste|de)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(ste|de)/,
 	    ordinal : function (number) {
 	        return number + ((number === 1 || number === 8 || number >= 20) ? 'ste' : 'de'); // Thanks to Joris Röling : https://github.com/jjupiter
 	    },
@@ -25655,9 +25894,9 @@ module.exports =
 	})));
 
 
-/***/ },
+/***/ }),
 /* 44 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Arabic (Algeria) [ar-dz]
@@ -25719,9 +25958,73 @@ module.exports =
 	})));
 
 
-/***/ },
+/***/ }),
 /* 45 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Arabic (Kuwait) [ar-kw]
+	//! author : Nusret Parlak: https://github.com/nusretparlak
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	var arKw = moment.defineLocale('ar-kw', {
+	    months : 'يناير_فبراير_مارس_أبريل_ماي_يونيو_يوليوز_غشت_شتنبر_أكتوبر_نونبر_دجنبر'.split('_'),
+	    monthsShort : 'يناير_فبراير_مارس_أبريل_ماي_يونيو_يوليوز_غشت_شتنبر_أكتوبر_نونبر_دجنبر'.split('_'),
+	    weekdays : 'الأحد_الإتنين_الثلاثاء_الأربعاء_الخميس_الجمعة_السبت'.split('_'),
+	    weekdaysShort : 'احد_اتنين_ثلاثاء_اربعاء_خميس_جمعة_سبت'.split('_'),
+	    weekdaysMin : 'ح_ن_ث_ر_خ_ج_س'.split('_'),
+	    weekdaysParseExact : true,
+	    longDateFormat : {
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
+	        L : 'DD/MM/YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY HH:mm',
+	        LLLL : 'dddd D MMMM YYYY HH:mm'
+	    },
+	    calendar : {
+	        sameDay: '[اليوم على الساعة] LT',
+	        nextDay: '[غدا على الساعة] LT',
+	        nextWeek: 'dddd [على الساعة] LT',
+	        lastDay: '[أمس على الساعة] LT',
+	        lastWeek: 'dddd [على الساعة] LT',
+	        sameElse: 'L'
+	    },
+	    relativeTime : {
+	        future : 'في %s',
+	        past : 'منذ %s',
+	        s : 'ثوان',
+	        m : 'دقيقة',
+	        mm : '%d دقائق',
+	        h : 'ساعة',
+	        hh : '%d ساعات',
+	        d : 'يوم',
+	        dd : '%d أيام',
+	        M : 'شهر',
+	        MM : '%d أشهر',
+	        y : 'سنة',
+	        yy : '%d سنوات'
+	    },
+	    week : {
+	        dow : 0, // Sunday is the first day of the week.
+	        doy : 12  // The week that contains Jan 1st is the first week of the year.
+	    }
+	});
+
+	return arKw;
+
+	})));
+
+
+/***/ }),
+/* 46 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Arabic (Lybia) [ar-ly]
@@ -25850,9 +26153,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 46 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 47 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Arabic (Morocco) [ar-ma]
@@ -25915,9 +26218,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 47 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 48 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Arabic (Saudi Arabia) [ar-sa]
@@ -26025,9 +26328,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 48 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 49 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale  :  Arabic (Tunisia) [ar-tn]
@@ -26089,9 +26392,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 49 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 50 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Arabic [ar]
@@ -26236,9 +26539,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 50 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 51 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Azerbaijani [az]
@@ -26325,7 +26628,7 @@ module.exports =
 	            return 'axşam';
 	        }
 	    },
-	    ordinalParse: /\d{1,2}-(ıncı|inci|nci|üncü|ncı|uncu)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(ıncı|inci|nci|üncü|ncı|uncu)/,
 	    ordinal : function (number) {
 	        if (number === 0) {  // special case for zero
 	            return number + '-ıncı';
@@ -26346,9 +26649,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 51 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 52 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Belarusian [be]
@@ -26459,7 +26762,7 @@ module.exports =
 	            return 'вечара';
 	        }
 	    },
-	    ordinalParse: /\d{1,2}-(і|ы|га)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(і|ы|га)/,
 	    ordinal: function (number, period) {
 	        switch (period) {
 	            case 'M':
@@ -26485,9 +26788,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 52 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 53 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Bulgarian [bg]
@@ -26549,7 +26852,7 @@ module.exports =
 	        y : 'година',
 	        yy : '%d години'
 	    },
-	    ordinalParse: /\d{1,2}-(ев|ен|ти|ви|ри|ми)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(ев|ен|ти|ви|ри|ми)/,
 	    ordinal : function (number) {
 	        var lastDigit = number % 10,
 	            last2Digits = number % 100;
@@ -26580,9 +26883,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 53 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 54 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Bengali [bn]
@@ -26704,9 +27007,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 54 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 55 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Tibetan [bo]
@@ -26828,9 +27131,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 55 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 56 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Breton [br]
@@ -26925,7 +27228,7 @@ module.exports =
 	        y : 'ur bloaz',
 	        yy : specialMutationForYears
 	    },
-	    ordinalParse: /\d{1,2}(añ|vet)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(añ|vet)/,
 	    ordinal : function (number) {
 	        var output = (number === 1) ? 'añ' : 'vet';
 	        return number + output;
@@ -26941,9 +27244,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 56 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 57 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Bosnian [bs]
@@ -27076,7 +27379,7 @@ module.exports =
 	        y      : 'godinu',
 	        yy     : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27089,9 +27392,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 57 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 58 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Catalan [ca]
@@ -27105,8 +27408,12 @@ module.exports =
 
 
 	var ca = moment.defineLocale('ca', {
-	    months : 'gener_febrer_març_abril_maig_juny_juliol_agost_setembre_octubre_novembre_desembre'.split('_'),
-	    monthsShort : 'gen._febr._mar._abr._mai._jun._jul._ag._set._oct._nov._des.'.split('_'),
+	    months : {
+	        standalone: 'gener_febrer_març_abril_maig_juny_juliol_agost_setembre_octubre_novembre_desembre'.split('_'),
+	        format: 'de gener_de febrer_de març_d\'abril_de maig_de juny_de juliol_d\'agost_de setembre_d\'octubre_de novembre_de desembre'.split('_'),
+	        isFormat: /D[oD]?(\s)+MMMM/
+	    },
+	    monthsShort : 'gen._febr._març_abr._maig_juny_jul._ag._set._oct._nov._des.'.split('_'),
 	    monthsParseExact : true,
 	    weekdays : 'diumenge_dilluns_dimarts_dimecres_dijous_divendres_dissabte'.split('_'),
 	    weekdaysShort : 'dg._dl._dt._dc._dj._dv._ds.'.split('_'),
@@ -27116,9 +27423,12 @@ module.exports =
 	        LT : 'H:mm',
 	        LTS : 'H:mm:ss',
 	        L : 'DD/MM/YYYY',
-	        LL : 'D MMMM YYYY',
-	        LLL : 'D MMMM YYYY H:mm',
-	        LLLL : 'dddd D MMMM YYYY H:mm'
+	        LL : '[el] D MMMM [de] YYYY',
+	        ll : 'D MMM YYYY',
+	        LLL : '[el] D MMMM [de] YYYY [a les] H:mm',
+	        lll : 'D MMM YYYY, H:mm',
+	        LLLL : '[el] dddd D MMMM [de] YYYY [a les] H:mm',
+	        llll : 'ddd D MMM YYYY, H:mm'
 	    },
 	    calendar : {
 	        sameDay : function () {
@@ -27153,7 +27463,7 @@ module.exports =
 	        y : 'un any',
 	        yy : '%d anys'
 	    },
-	    ordinalParse: /\d{1,2}(r|n|t|è|a)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(r|n|t|è|a)/,
 	    ordinal : function (number, period) {
 	        var output = (number === 1) ? 'r' :
 	            (number === 2) ? 'n' :
@@ -27175,9 +27485,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 58 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 59 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Czech [cs]
@@ -27339,7 +27649,7 @@ module.exports =
 	        y : translate,
 	        yy : translate
 	    },
-	    ordinalParse : /\d{1,2}\./,
+	    dayOfMonthOrdinalParse : /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27352,9 +27662,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 59 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 60 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Chuvash [cv]
@@ -27407,7 +27717,7 @@ module.exports =
 	        y : 'пӗр ҫул',
 	        yy : '%d ҫул'
 	    },
-	    ordinalParse: /\d{1,2}-мӗш/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-мӗш/,
 	    ordinal : '%d-мӗш',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27420,9 +27730,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 60 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 61 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Welsh [cy]
@@ -27475,7 +27785,7 @@ module.exports =
 	        y: 'blwyddyn',
 	        yy: '%d flynedd'
 	    },
-	    ordinalParse: /\d{1,2}(fed|ain|af|il|ydd|ed|eg)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(fed|ain|af|il|ydd|ed|eg)/,
 	    // traditional ordinal numbers above 31 are not commonly used in colloquial Welsh
 	    ordinal: function (number) {
 	        var b = number,
@@ -27506,9 +27816,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 61 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 62 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Danish [da]
@@ -27533,14 +27843,14 @@ module.exports =
 	        L : 'DD/MM/YYYY',
 	        LL : 'D. MMMM YYYY',
 	        LLL : 'D. MMMM YYYY HH:mm',
-	        LLLL : 'dddd [d.] D. MMMM YYYY HH:mm'
+	        LLLL : 'dddd [d.] D. MMMM YYYY [kl.] HH:mm'
 	    },
 	    calendar : {
-	        sameDay : '[I dag kl.] LT',
-	        nextDay : '[I morgen kl.] LT',
-	        nextWeek : 'dddd [kl.] LT',
-	        lastDay : '[I går kl.] LT',
-	        lastWeek : '[sidste] dddd [kl] LT',
+	        sameDay : '[i dag kl.] LT',
+	        nextDay : '[i morgen kl.] LT',
+	        nextWeek : 'på dddd [kl.] LT',
+	        lastDay : '[i går kl.] LT',
+	        lastWeek : '[i] dddd[s kl.] LT',
 	        sameElse : 'L'
 	    },
 	    relativeTime : {
@@ -27558,7 +27868,7 @@ module.exports =
 	        y : 'et år',
 	        yy : '%d år'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27571,9 +27881,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 62 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 63 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : German (Austria) [de-at]
@@ -27642,7 +27952,7 @@ module.exports =
 	        y : processRelativeTime,
 	        yy : processRelativeTime
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27655,9 +27965,92 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 63 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 64 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : German (Switzerland) [de-ch]
+	//! author : sschueller : https://github.com/sschueller
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	// based on: https://www.bk.admin.ch/dokumentation/sprachen/04915/05016/index.html?lang=de#
+
+	function processRelativeTime(number, withoutSuffix, key, isFuture) {
+	    var format = {
+	        'm': ['eine Minute', 'einer Minute'],
+	        'h': ['eine Stunde', 'einer Stunde'],
+	        'd': ['ein Tag', 'einem Tag'],
+	        'dd': [number + ' Tage', number + ' Tagen'],
+	        'M': ['ein Monat', 'einem Monat'],
+	        'MM': [number + ' Monate', number + ' Monaten'],
+	        'y': ['ein Jahr', 'einem Jahr'],
+	        'yy': [number + ' Jahre', number + ' Jahren']
+	    };
+	    return withoutSuffix ? format[key][0] : format[key][1];
+	}
+
+	var deCh = moment.defineLocale('de-ch', {
+	    months : 'Januar_Februar_März_April_Mai_Juni_Juli_August_September_Oktober_November_Dezember'.split('_'),
+	    monthsShort : 'Jan._Febr._März_April_Mai_Juni_Juli_Aug._Sept._Okt._Nov._Dez.'.split('_'),
+	    monthsParseExact : true,
+	    weekdays : 'Sonntag_Montag_Dienstag_Mittwoch_Donnerstag_Freitag_Samstag'.split('_'),
+	    weekdaysShort : 'So_Mo_Di_Mi_Do_Fr_Sa'.split('_'),
+	    weekdaysMin : 'So_Mo_Di_Mi_Do_Fr_Sa'.split('_'),
+	    weekdaysParseExact : true,
+	    longDateFormat : {
+	        LT: 'HH.mm',
+	        LTS: 'HH.mm.ss',
+	        L : 'DD.MM.YYYY',
+	        LL : 'D. MMMM YYYY',
+	        LLL : 'D. MMMM YYYY HH.mm',
+	        LLLL : 'dddd, D. MMMM YYYY HH.mm'
+	    },
+	    calendar : {
+	        sameDay: '[heute um] LT [Uhr]',
+	        sameElse: 'L',
+	        nextDay: '[morgen um] LT [Uhr]',
+	        nextWeek: 'dddd [um] LT [Uhr]',
+	        lastDay: '[gestern um] LT [Uhr]',
+	        lastWeek: '[letzten] dddd [um] LT [Uhr]'
+	    },
+	    relativeTime : {
+	        future : 'in %s',
+	        past : 'vor %s',
+	        s : 'ein paar Sekunden',
+	        m : processRelativeTime,
+	        mm : '%d Minuten',
+	        h : processRelativeTime,
+	        hh : '%d Stunden',
+	        d : processRelativeTime,
+	        dd : processRelativeTime,
+	        M : processRelativeTime,
+	        MM : processRelativeTime,
+	        y : processRelativeTime,
+	        yy : processRelativeTime
+	    },
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
+	    ordinal : '%d.',
+	    week : {
+	        dow : 1, // Monday is the first day of the week.
+	        doy : 4  // The week that contains Jan 4th is the first week of the year.
+	    }
+	});
+
+	return deCh;
+
+	})));
+
+
+/***/ }),
+/* 65 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : German [de]
@@ -27725,7 +28118,7 @@ module.exports =
 	        y : processRelativeTime,
 	        yy : processRelativeTime
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27738,9 +28131,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 64 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 66 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Maldivian [dv]
@@ -27843,9 +28236,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 65 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 67 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Greek [el]
@@ -27866,7 +28259,9 @@ module.exports =
 	    monthsNominativeEl : 'Ιανουάριος_Φεβρουάριος_Μάρτιος_Απρίλιος_Μάιος_Ιούνιος_Ιούλιος_Αύγουστος_Σεπτέμβριος_Οκτώβριος_Νοέμβριος_Δεκέμβριος'.split('_'),
 	    monthsGenitiveEl : 'Ιανουαρίου_Φεβρουαρίου_Μαρτίου_Απριλίου_Μαΐου_Ιουνίου_Ιουλίου_Αυγούστου_Σεπτεμβρίου_Οκτωβρίου_Νοεμβρίου_Δεκεμβρίου'.split('_'),
 	    months : function (momentToFormat, format) {
-	        if (/D/.test(format.substring(0, format.indexOf('MMMM')))) { // if there is a day number before 'MMMM'
+	        if (!momentToFormat) {
+	            return this._monthsNominativeEl;
+	        } else if (/D/.test(format.substring(0, format.indexOf('MMMM')))) { // if there is a day number before 'MMMM'
 	            return this._monthsGenitiveEl[momentToFormat.month()];
 	        } else {
 	            return this._monthsNominativeEl[momentToFormat.month()];
@@ -27933,7 +28328,7 @@ module.exports =
 	        y : 'ένας χρόνος',
 	        yy : '%d χρόνια'
 	    },
-	    ordinalParse: /\d{1,2}η/,
+	    dayOfMonthOrdinalParse: /\d{1,2}η/,
 	    ordinal: '%dη',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -27946,9 +28341,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 66 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 68 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : English (Australia) [en-au]
@@ -27998,7 +28393,7 @@ module.exports =
 	        y : 'a year',
 	        yy : '%d years'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -28018,9 +28413,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 67 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 69 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : English (Canada) [en-ca]
@@ -28070,7 +28465,7 @@ module.exports =
 	        y : 'a year',
 	        yy : '%d years'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -28086,9 +28481,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 68 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 70 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : English (United Kingdom) [en-gb]
@@ -28138,7 +28533,7 @@ module.exports =
 	        y : 'a year',
 	        yy : '%d years'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -28158,9 +28553,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 69 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 71 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : English (Ireland) [en-ie]
@@ -28210,7 +28605,7 @@ module.exports =
 	        y : 'a year',
 	        yy : '%d years'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -28230,9 +28625,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 70 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 72 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : English (New Zealand) [en-nz]
@@ -28282,7 +28677,7 @@ module.exports =
 	        y : 'a year',
 	        yy : '%d years'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -28302,15 +28697,15 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 71 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 73 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Esperanto [eo]
 	//! author : Colin Dean : https://github.com/colindean
-	//! komento: Mi estas malcerta se mi korekte traktis akuzativojn en tiu traduko.
-	//!          Se ne, bonvolu korekti kaj avizi min por ke mi povas lerni!
+	//! author : Mia Nordentoft Imperatori : https://github.com/miestasmia
+	//! comment : miestasmia corrected the translation by colindean
 
 	;(function (global, factory) {
 	    true ? factory(__webpack_require__(1)) :
@@ -28322,16 +28717,16 @@ module.exports =
 	var eo = moment.defineLocale('eo', {
 	    months : 'januaro_februaro_marto_aprilo_majo_junio_julio_aŭgusto_septembro_oktobro_novembro_decembro'.split('_'),
 	    monthsShort : 'jan_feb_mar_apr_maj_jun_jul_aŭg_sep_okt_nov_dec'.split('_'),
-	    weekdays : 'Dimanĉo_Lundo_Mardo_Merkredo_Ĵaŭdo_Vendredo_Sabato'.split('_'),
-	    weekdaysShort : 'Dim_Lun_Mard_Merk_Ĵaŭ_Ven_Sab'.split('_'),
-	    weekdaysMin : 'Di_Lu_Ma_Me_Ĵa_Ve_Sa'.split('_'),
+	    weekdays : 'dimanĉo_lundo_mardo_merkredo_ĵaŭdo_vendredo_sabato'.split('_'),
+	    weekdaysShort : 'dim_lun_mard_merk_ĵaŭ_ven_sab'.split('_'),
+	    weekdaysMin : 'di_lu_ma_me_ĵa_ve_sa'.split('_'),
 	    longDateFormat : {
 	        LT : 'HH:mm',
 	        LTS : 'HH:mm:ss',
 	        L : 'YYYY-MM-DD',
-	        LL : 'D[-an de] MMMM, YYYY',
-	        LLL : 'D[-an de] MMMM, YYYY HH:mm',
-	        LLLL : 'dddd, [la] D[-an de] MMMM, YYYY HH:mm'
+	        LL : 'D[-a de] MMMM, YYYY',
+	        LLL : 'D[-a de] MMMM, YYYY HH:mm',
+	        LLLL : 'dddd, [la] D[-a de] MMMM, YYYY HH:mm'
 	    },
 	    meridiemParse: /[ap]\.t\.m/i,
 	    isPM: function (input) {
@@ -28353,7 +28748,7 @@ module.exports =
 	        sameElse : 'L'
 	    },
 	    relativeTime : {
-	        future : 'je %s',
+	        future : 'post %s',
 	        past : 'antaŭ %s',
 	        s : 'sekundoj',
 	        m : 'minuto',
@@ -28367,7 +28762,7 @@ module.exports =
 	        y : 'jaro',
 	        yy : '%d jaroj'
 	    },
-	    ordinalParse: /\d{1,2}a/,
+	    dayOfMonthOrdinalParse: /\d{1,2}a/,
 	    ordinal : '%da',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28380,9 +28775,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 72 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 74 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Spanish (Dominican Republic) [es-do]
@@ -28400,7 +28795,9 @@ module.exports =
 	var esDo = moment.defineLocale('es-do', {
 	    months : 'enero_febrero_marzo_abril_mayo_junio_julio_agosto_septiembre_octubre_noviembre_diciembre'.split('_'),
 	    monthsShort : function (m, format) {
-	        if (/-MMM-/.test(format)) {
+	        if (!m) {
+	            return monthsShortDot;
+	        } else if (/-MMM-/.test(format)) {
 	            return monthsShort[m.month()];
 	        } else {
 	            return monthsShortDot[m.month()];
@@ -28452,7 +28849,7 @@ module.exports =
 	        y : 'un año',
 	        yy : '%d años'
 	    },
-	    ordinalParse : /\d{1,2}º/,
+	    dayOfMonthOrdinalParse : /\d{1,2}º/,
 	    ordinal : '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28465,9 +28862,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 73 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 75 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Spanish [es]
@@ -28486,7 +28883,9 @@ module.exports =
 	var es = moment.defineLocale('es', {
 	    months : 'enero_febrero_marzo_abril_mayo_junio_julio_agosto_septiembre_octubre_noviembre_diciembre'.split('_'),
 	    monthsShort : function (m, format) {
-	        if (/-MMM-/.test(format)) {
+	        if (!m) {
+	            return monthsShortDot;
+	        } else if (/-MMM-/.test(format)) {
 	            return monthsShort[m.month()];
 	        } else {
 	            return monthsShortDot[m.month()];
@@ -28538,7 +28937,7 @@ module.exports =
 	        y : 'un año',
 	        yy : '%d años'
 	    },
-	    ordinalParse : /\d{1,2}º/,
+	    dayOfMonthOrdinalParse : /\d{1,2}º/,
 	    ordinal : '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28551,9 +28950,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 74 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 76 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Estonian [et]
@@ -28623,7 +29022,7 @@ module.exports =
 	        y      : processRelativeTime,
 	        yy     : processRelativeTime
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28636,9 +29035,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 75 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 77 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Basque [eu]
@@ -28694,7 +29093,7 @@ module.exports =
 	        y : 'urte bat',
 	        yy : '%d urte'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28707,9 +29106,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 76 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 78 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Persian [fa]
@@ -28784,7 +29183,7 @@ module.exports =
 	    relativeTime : {
 	        future : 'در %s',
 	        past : '%s پیش',
-	        s : 'چندین ثانیه',
+	        s : 'چند ثانیه',
 	        m : 'یک دقیقه',
 	        mm : '%d دقیقه',
 	        h : 'یک ساعت',
@@ -28806,7 +29205,7 @@ module.exports =
 	            return symbolMap[match];
 	        }).replace(/,/g, '،');
 	    },
-	    ordinalParse: /\d{1,2}م/,
+	    dayOfMonthOrdinalParse: /\d{1,2}م/,
 	    ordinal : '%dم',
 	    week : {
 	        dow : 6, // Saturday is the first day of the week.
@@ -28819,9 +29218,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 77 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 79 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Finnish [fi]
@@ -28918,7 +29317,7 @@ module.exports =
 	        y : translate,
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28931,9 +29330,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 78 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 80 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Faroese [fo]
@@ -28983,7 +29382,7 @@ module.exports =
 	        y : 'eitt ár',
 	        yy : '%d ár'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -28996,9 +29395,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 79 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 81 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : French (Canada) [fr-ca]
@@ -29028,12 +29427,12 @@ module.exports =
 	        LLLL : 'dddd D MMMM YYYY HH:mm'
 	    },
 	    calendar : {
-	        sameDay: '[Aujourd\'hui à] LT',
-	        nextDay: '[Demain à] LT',
-	        nextWeek: 'dddd [à] LT',
-	        lastDay: '[Hier à] LT',
-	        lastWeek: 'dddd [dernier à] LT',
-	        sameElse: 'L'
+	        sameDay : '[Aujourd’hui à] LT',
+	        nextDay : '[Demain à] LT',
+	        nextWeek : 'dddd [à] LT',
+	        lastDay : '[Hier à] LT',
+	        lastWeek : 'dddd [dernier à] LT',
+	        sameElse : 'L'
 	    },
 	    relativeTime : {
 	        future : 'dans %s',
@@ -29050,9 +29449,23 @@ module.exports =
 	        y : 'un an',
 	        yy : '%d ans'
 	    },
-	    ordinalParse: /\d{1,2}(er|e)/,
-	    ordinal : function (number) {
-	        return number + (number === 1 ? 'er' : 'e');
+	    dayOfMonthOrdinalParse: /\d{1,2}(er|e)/,
+	    ordinal : function (number, period) {
+	        switch (period) {
+	            // Words with masculine grammatical gender: mois, trimestre, jour
+	            default:
+	            case 'M':
+	            case 'Q':
+	            case 'D':
+	            case 'DDD':
+	            case 'd':
+	                return number + (number === 1 ? 'er' : 'e');
+
+	            // Words with feminine grammatical gender: semaine
+	            case 'w':
+	            case 'W':
+	                return number + (number === 1 ? 're' : 'e');
+	        }
 	    }
 	});
 
@@ -29061,9 +29474,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 80 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 82 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : French (Switzerland) [fr-ch]
@@ -29093,12 +29506,12 @@ module.exports =
 	        LLLL : 'dddd D MMMM YYYY HH:mm'
 	    },
 	    calendar : {
-	        sameDay: '[Aujourd\'hui à] LT',
-	        nextDay: '[Demain à] LT',
-	        nextWeek: 'dddd [à] LT',
-	        lastDay: '[Hier à] LT',
-	        lastWeek: 'dddd [dernier à] LT',
-	        sameElse: 'L'
+	        sameDay : '[Aujourd’hui à] LT',
+	        nextDay : '[Demain à] LT',
+	        nextWeek : 'dddd [à] LT',
+	        lastDay : '[Hier à] LT',
+	        lastWeek : 'dddd [dernier à] LT',
+	        sameElse : 'L'
 	    },
 	    relativeTime : {
 	        future : 'dans %s',
@@ -29115,9 +29528,23 @@ module.exports =
 	        y : 'un an',
 	        yy : '%d ans'
 	    },
-	    ordinalParse: /\d{1,2}(er|e)/,
-	    ordinal : function (number) {
-	        return number + (number === 1 ? 'er' : 'e');
+	    dayOfMonthOrdinalParse: /\d{1,2}(er|e)/,
+	    ordinal : function (number, period) {
+	        switch (period) {
+	            // Words with masculine grammatical gender: mois, trimestre, jour
+	            default:
+	            case 'M':
+	            case 'Q':
+	            case 'D':
+	            case 'DDD':
+	            case 'd':
+	                return number + (number === 1 ? 'er' : 'e');
+
+	            // Words with feminine grammatical gender: semaine
+	            case 'w':
+	            case 'W':
+	                return number + (number === 1 ? 're' : 'e');
+	        }
 	    },
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -29130,9 +29557,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 81 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 83 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : French [fr]
@@ -29162,12 +29589,12 @@ module.exports =
 	        LLLL : 'dddd D MMMM YYYY HH:mm'
 	    },
 	    calendar : {
-	        sameDay: '[Aujourd\'hui à] LT',
-	        nextDay: '[Demain à] LT',
-	        nextWeek: 'dddd [à] LT',
-	        lastDay: '[Hier à] LT',
-	        lastWeek: 'dddd [dernier à] LT',
-	        sameElse: 'L'
+	        sameDay : '[Aujourd’hui à] LT',
+	        nextDay : '[Demain à] LT',
+	        nextWeek : 'dddd [à] LT',
+	        lastDay : '[Hier à] LT',
+	        lastWeek : 'dddd [dernier à] LT',
+	        sameElse : 'L'
 	    },
 	    relativeTime : {
 	        future : 'dans %s',
@@ -29184,9 +29611,28 @@ module.exports =
 	        y : 'un an',
 	        yy : '%d ans'
 	    },
-	    ordinalParse: /\d{1,2}(er|)/,
-	    ordinal : function (number) {
-	        return number + (number === 1 ? 'er' : '');
+	    dayOfMonthOrdinalParse: /\d{1,2}(er|)/,
+	    ordinal : function (number, period) {
+	        switch (period) {
+	            // TODO: Return 'e' when day of month > 1. Move this case inside
+	            // block for masculine words below.
+	            // See https://github.com/moment/moment/issues/3375
+	            case 'D':
+	                return number + (number === 1 ? 'er' : '');
+
+	            // Words with masculine grammatical gender: mois, trimestre, jour
+	            default:
+	            case 'M':
+	            case 'Q':
+	            case 'DDD':
+	            case 'd':
+	                return number + (number === 1 ? 'er' : 'e');
+
+	            // Words with feminine grammatical gender: semaine
+	            case 'w':
+	            case 'W':
+	                return number + (number === 1 ? 're' : 'e');
+	        }
 	    },
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -29199,9 +29645,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 82 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 84 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Frisian [fy]
@@ -29220,7 +29666,9 @@ module.exports =
 	var fy = moment.defineLocale('fy', {
 	    months : 'jannewaris_febrewaris_maart_april_maaie_juny_july_augustus_septimber_oktober_novimber_desimber'.split('_'),
 	    monthsShort : function (m, format) {
-	        if (/-MMM-/.test(format)) {
+	        if (!m) {
+	            return monthsShortWithDots;
+	        } else if (/-MMM-/.test(format)) {
 	            return monthsShortWithoutDots[m.month()];
 	        } else {
 	            return monthsShortWithDots[m.month()];
@@ -29262,7 +29710,7 @@ module.exports =
 	        y : 'ien jier',
 	        yy : '%d jierren'
 	    },
-	    ordinalParse: /\d{1,2}(ste|de)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(ste|de)/,
 	    ordinal : function (number) {
 	        return number + ((number === 1 || number === 8 || number >= 20) ? 'ste' : 'de');
 	    },
@@ -29277,9 +29725,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 83 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 85 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Scottish Gaelic [gd]
@@ -29342,7 +29790,7 @@ module.exports =
 	        y : 'bliadhna',
 	        yy : '%d bliadhna'
 	    },
-	    ordinalParse : /\d{1,2}(d|na|mh)/,
+	    dayOfMonthOrdinalParse : /\d{1,2}(d|na|mh)/,
 	    ordinal : function (number) {
 	        var output = number === 1 ? 'd' : number % 10 === 2 ? 'na' : 'mh';
 	        return number + output;
@@ -29358,9 +29806,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 84 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 86 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Galician [gl]
@@ -29427,7 +29875,7 @@ module.exports =
 	        y : 'un ano',
 	        yy : '%d anos'
 	    },
-	    ordinalParse : /\d{1,2}º/,
+	    dayOfMonthOrdinalParse : /\d{1,2}º/,
 	    ordinal : '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -29440,9 +29888,136 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 85 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 87 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Konkani Latin script [gom-latn]
+	//! author : The Discoverer : https://github.com/WikiDiscoverer
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	function processRelativeTime(number, withoutSuffix, key, isFuture) {
+	    var format = {
+	        's': ['thodde secondanim', 'thodde second'],
+	        'm': ['eka mintan', 'ek minute'],
+	        'mm': [number + ' mintanim', number + ' mintam'],
+	        'h': ['eka horan', 'ek hor'],
+	        'hh': [number + ' horanim', number + ' hor'],
+	        'd': ['eka disan', 'ek dis'],
+	        'dd': [number + ' disanim', number + ' dis'],
+	        'M': ['eka mhoinean', 'ek mhoino'],
+	        'MM': [number + ' mhoineanim', number + ' mhoine'],
+	        'y': ['eka vorsan', 'ek voros'],
+	        'yy': [number + ' vorsanim', number + ' vorsam']
+	    };
+	    return withoutSuffix ? format[key][0] : format[key][1];
+	}
+
+	var gomLatn = moment.defineLocale('gom-latn', {
+	    months : 'Janer_Febrer_Mars_Abril_Mai_Jun_Julai_Agost_Setembr_Otubr_Novembr_Dezembr'.split('_'),
+	    monthsShort : 'Jan._Feb._Mars_Abr._Mai_Jun_Jul._Ago._Set._Otu._Nov._Dez.'.split('_'),
+	    monthsParseExact : true,
+	    weekdays : 'Aitar_Somar_Mongllar_Budvar_Brestar_Sukrar_Son\'var'.split('_'),
+	    weekdaysShort : 'Ait._Som._Mon._Bud._Bre._Suk._Son.'.split('_'),
+	    weekdaysMin : 'Ai_Sm_Mo_Bu_Br_Su_Sn'.split('_'),
+	    weekdaysParseExact : true,
+	    longDateFormat : {
+	        LT : 'A h:mm [vazta]',
+	        LTS : 'A h:mm:ss [vazta]',
+	        L : 'DD-MM-YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY A h:mm [vazta]',
+	        LLLL : 'dddd, MMMM[achea] Do, YYYY, A h:mm [vazta]',
+	        llll: 'ddd, D MMM YYYY, A h:mm [vazta]'
+	    },
+	    calendar : {
+	        sameDay: '[Aiz] LT',
+	        nextDay: '[Faleam] LT',
+	        nextWeek: '[Ieta to] dddd[,] LT',
+	        lastDay: '[Kal] LT',
+	        lastWeek: '[Fatlo] dddd[,] LT',
+	        sameElse: 'L'
+	    },
+	    relativeTime : {
+	        future : '%s',
+	        past : '%s adim',
+	        s : processRelativeTime,
+	        m : processRelativeTime,
+	        mm : processRelativeTime,
+	        h : processRelativeTime,
+	        hh : processRelativeTime,
+	        d : processRelativeTime,
+	        dd : processRelativeTime,
+	        M : processRelativeTime,
+	        MM : processRelativeTime,
+	        y : processRelativeTime,
+	        yy : processRelativeTime
+	    },
+	    dayOfMonthOrdinalParse : /\d{1,2}(er)/,
+	    ordinal : function (number, period) {
+	        switch (period) {
+	            // the ordinal 'er' only applies to day of the month
+	            case 'D':
+	                return number + 'er';
+	            default:
+	            case 'M':
+	            case 'Q':
+	            case 'DDD':
+	            case 'd':
+	            case 'w':
+	            case 'W':
+	                return number;
+	        }
+	    },
+	    week : {
+	        dow : 1, // Monday is the first day of the week.
+	        doy : 4  // The week that contains Jan 4th is the first week of the year.
+	    },
+	    meridiemParse: /rati|sokalli|donparam|sanje/,
+	    meridiemHour : function (hour, meridiem) {
+	        if (hour === 12) {
+	            hour = 0;
+	        }
+	        if (meridiem === 'rati') {
+	            return hour < 4 ? hour : hour + 12;
+	        } else if (meridiem === 'sokalli') {
+	            return hour;
+	        } else if (meridiem === 'donparam') {
+	            return hour > 12 ? hour : hour + 12;
+	        } else if (meridiem === 'sanje') {
+	            return hour + 12;
+	        }
+	    },
+	    meridiem : function (hour, minute, isLower) {
+	        if (hour < 4) {
+	            return 'rati';
+	        } else if (hour < 12) {
+	            return 'sokalli';
+	        } else if (hour < 16) {
+	            return 'donparam';
+	        } else if (hour < 20) {
+	            return 'sanje';
+	        } else {
+	            return 'rati';
+	        }
+	    }
+	});
+
+	return gomLatn;
+
+	})));
+
+
+/***/ }),
+/* 88 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Hebrew [he]
@@ -29544,9 +30119,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 86 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 89 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Hindi [hi]
@@ -29673,9 +30248,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 87 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 90 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Croatian [hr]
@@ -29810,7 +30385,7 @@ module.exports =
 	        y      : 'godinu',
 	        yy     : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -29823,9 +30398,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 88 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 91 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Hungarian [hu]
@@ -29924,7 +30499,7 @@ module.exports =
 	        y : translate,
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -29937,9 +30512,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 89 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 92 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Armenian [hy-am]
@@ -30011,7 +30586,7 @@ module.exports =
 	            return 'երեկոյան';
 	        }
 	    },
-	    ordinalParse: /\d{1,2}|\d{1,2}-(ին|րդ)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}|\d{1,2}-(ին|րդ)/,
 	    ordinal: function (number, period) {
 	        switch (period) {
 	            case 'DDD':
@@ -30037,9 +30612,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 90 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 93 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Indonesian [id]
@@ -30125,9 +30700,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 91 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 94 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Icelandic [is]
@@ -30244,7 +30819,7 @@ module.exports =
 	        y : translate,
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -30257,9 +30832,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 92 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 95 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Italian [it]
@@ -30276,9 +30851,9 @@ module.exports =
 	var it = moment.defineLocale('it', {
 	    months : 'gennaio_febbraio_marzo_aprile_maggio_giugno_luglio_agosto_settembre_ottobre_novembre_dicembre'.split('_'),
 	    monthsShort : 'gen_feb_mar_apr_mag_giu_lug_ago_set_ott_nov_dic'.split('_'),
-	    weekdays : 'Domenica_Lunedì_Martedì_Mercoledì_Giovedì_Venerdì_Sabato'.split('_'),
-	    weekdaysShort : 'Dom_Lun_Mar_Mer_Gio_Ven_Sab'.split('_'),
-	    weekdaysMin : 'Do_Lu_Ma_Me_Gi_Ve_Sa'.split('_'),
+	    weekdays : 'domenica_lunedì_martedì_mercoledì_giovedì_venerdì_sabato'.split('_'),
+	    weekdaysShort : 'dom_lun_mar_mer_gio_ven_sab'.split('_'),
+	    weekdaysMin : 'do_lu_ma_me_gi_ve_sa'.split('_'),
 	    longDateFormat : {
 	        LT : 'HH:mm',
 	        LTS : 'HH:mm:ss',
@@ -30319,7 +30894,7 @@ module.exports =
 	        y : 'un anno',
 	        yy : '%d anni'
 	    },
-	    ordinalParse : /\d{1,2}º/,
+	    dayOfMonthOrdinalParse : /\d{1,2}º/,
 	    ordinal: '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -30332,9 +30907,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 93 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 96 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Japanese [ja]
@@ -30354,12 +30929,16 @@ module.exports =
 	    weekdaysShort : '日_月_火_水_木_金_土'.split('_'),
 	    weekdaysMin : '日_月_火_水_木_金_土'.split('_'),
 	    longDateFormat : {
-	        LT : 'Ah時m分',
-	        LTS : 'Ah時m分s秒',
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
 	        L : 'YYYY/MM/DD',
 	        LL : 'YYYY年M月D日',
-	        LLL : 'YYYY年M月D日Ah時m分',
-	        LLLL : 'YYYY年M月D日Ah時m分 dddd'
+	        LLL : 'YYYY年M月D日 HH:mm',
+	        LLLL : 'YYYY年M月D日 HH:mm dddd',
+	        l : 'YYYY/MM/DD',
+	        ll : 'YYYY年M月D日',
+	        lll : 'YYYY年M月D日 HH:mm',
+	        llll : 'YYYY年M月D日 HH:mm dddd'
 	    },
 	    meridiemParse: /午前|午後/i,
 	    isPM : function (input) {
@@ -30380,7 +30959,7 @@ module.exports =
 	        lastWeek : '[前週]dddd LT',
 	        sameElse : 'L'
 	    },
-	    ordinalParse : /\d{1,2}日/,
+	    dayOfMonthOrdinalParse : /\d{1,2}日/,
 	    ordinal : function (number, period) {
 	        switch (period) {
 	            case 'd':
@@ -30413,9 +30992,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 94 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 97 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Javanese [jv]
@@ -30501,9 +31080,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 95 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 98 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Georgian [ka]
@@ -30553,10 +31132,10 @@ module.exports =
 	        },
 	        past : function (s) {
 	            if ((/(წამი|წუთი|საათი|დღე|თვე)/).test(s)) {
-	                return s.replace(/(ი|ე)$/, 'ის წინ');
+	                return s.replace(/(ი|ე)$/, 'ის უკან');
 	            }
 	            if ((/წელი/).test(s)) {
-	                return s.replace(/წელი$/, 'წლის წინ');
+	                return s.replace(/წელი$/, 'წლის უკან');
 	            }
 	        },
 	        s : 'რამდენიმე წამი',
@@ -30571,7 +31150,7 @@ module.exports =
 	        y : 'წელი',
 	        yy : '%d წელი'
 	    },
-	    ordinalParse: /0|1-ლი|მე-\d{1,2}|\d{1,2}-ე/,
+	    dayOfMonthOrdinalParse: /0|1-ლი|მე-\d{1,2}|\d{1,2}-ე/,
 	    ordinal : function (number) {
 	        if (number === 0) {
 	            return number;
@@ -30595,9 +31174,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 96 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 99 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Kazakh [kk]
@@ -30670,7 +31249,7 @@ module.exports =
 	        y : 'бір жыл',
 	        yy : '%d жыл'
 	    },
-	    ordinalParse: /\d{1,2}-(ші|шы)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(ші|шы)/,
 	    ordinal : function (number) {
 	        var a = number % 10,
 	            b = number >= 100 ? 100 : null;
@@ -30687,9 +31266,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 97 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 100 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Cambodian [km]
@@ -30750,9 +31329,140 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 98 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 101 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Kannada [kn]
+	//! author : Rajeev Naik : https://github.com/rajeevnaikte
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	var symbolMap = {
+	    '1': '೧',
+	    '2': '೨',
+	    '3': '೩',
+	    '4': '೪',
+	    '5': '೫',
+	    '6': '೬',
+	    '7': '೭',
+	    '8': '೮',
+	    '9': '೯',
+	    '0': '೦'
+	};
+	var numberMap = {
+	    '೧': '1',
+	    '೨': '2',
+	    '೩': '3',
+	    '೪': '4',
+	    '೫': '5',
+	    '೬': '6',
+	    '೭': '7',
+	    '೮': '8',
+	    '೯': '9',
+	    '೦': '0'
+	};
+
+	var kn = moment.defineLocale('kn', {
+	    months : 'ಜನವರಿ_ಫೆಬ್ರವರಿ_ಮಾರ್ಚ್_ಏಪ್ರಿಲ್_ಮೇ_ಜೂನ್_ಜುಲೈ_ಆಗಸ್ಟ್_ಸೆಪ್ಟೆಂಬರ್_ಅಕ್ಟೋಬರ್_ನವೆಂಬರ್_ಡಿಸೆಂಬರ್'.split('_'),
+	    monthsShort : 'ಜನ_ಫೆಬ್ರ_ಮಾರ್ಚ್_ಏಪ್ರಿಲ್_ಮೇ_ಜೂನ್_ಜುಲೈ_ಆಗಸ್ಟ್_ಸೆಪ್ಟೆಂಬ_ಅಕ್ಟೋಬ_ನವೆಂಬ_ಡಿಸೆಂಬ'.split('_'),
+	    monthsParseExact: true,
+	    weekdays : 'ಭಾನುವಾರ_ಸೋಮವಾರ_ಮಂಗಳವಾರ_ಬುಧವಾರ_ಗುರುವಾರ_ಶುಕ್ರವಾರ_ಶನಿವಾರ'.split('_'),
+	    weekdaysShort : 'ಭಾನು_ಸೋಮ_ಮಂಗಳ_ಬುಧ_ಗುರು_ಶುಕ್ರ_ಶನಿ'.split('_'),
+	    weekdaysMin : 'ಭಾ_ಸೋ_ಮಂ_ಬು_ಗು_ಶು_ಶ'.split('_'),
+	    longDateFormat : {
+	        LT : 'A h:mm',
+	        LTS : 'A h:mm:ss',
+	        L : 'DD/MM/YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY, A h:mm',
+	        LLLL : 'dddd, D MMMM YYYY, A h:mm'
+	    },
+	    calendar : {
+	        sameDay : '[ಇಂದು] LT',
+	        nextDay : '[ನಾಳೆ] LT',
+	        nextWeek : 'dddd, LT',
+	        lastDay : '[ನಿನ್ನೆ] LT',
+	        lastWeek : '[ಕೊನೆಯ] dddd, LT',
+	        sameElse : 'L'
+	    },
+	    relativeTime : {
+	        future : '%s ನಂತರ',
+	        past : '%s ಹಿಂದೆ',
+	        s : 'ಕೆಲವು ಕ್ಷಣಗಳು',
+	        m : 'ಒಂದು ನಿಮಿಷ',
+	        mm : '%d ನಿಮಿಷ',
+	        h : 'ಒಂದು ಗಂಟೆ',
+	        hh : '%d ಗಂಟೆ',
+	        d : 'ಒಂದು ದಿನ',
+	        dd : '%d ದಿನ',
+	        M : 'ಒಂದು ತಿಂಗಳು',
+	        MM : '%d ತಿಂಗಳು',
+	        y : 'ಒಂದು ವರ್ಷ',
+	        yy : '%d ವರ್ಷ'
+	    },
+	    preparse: function (string) {
+	        return string.replace(/[೧೨೩೪೫೬೭೮೯೦]/g, function (match) {
+	            return numberMap[match];
+	        });
+	    },
+	    postformat: function (string) {
+	        return string.replace(/\d/g, function (match) {
+	            return symbolMap[match];
+	        });
+	    },
+	    meridiemParse: /ರಾತ್ರಿ|ಬೆಳಿಗ್ಗೆ|ಮಧ್ಯಾಹ್ನ|ಸಂಜೆ/,
+	    meridiemHour : function (hour, meridiem) {
+	        if (hour === 12) {
+	            hour = 0;
+	        }
+	        if (meridiem === 'ರಾತ್ರಿ') {
+	            return hour < 4 ? hour : hour + 12;
+	        } else if (meridiem === 'ಬೆಳಿಗ್ಗೆ') {
+	            return hour;
+	        } else if (meridiem === 'ಮಧ್ಯಾಹ್ನ') {
+	            return hour >= 10 ? hour : hour + 12;
+	        } else if (meridiem === 'ಸಂಜೆ') {
+	            return hour + 12;
+	        }
+	    },
+	    meridiem : function (hour, minute, isLower) {
+	        if (hour < 4) {
+	            return 'ರಾತ್ರಿ';
+	        } else if (hour < 10) {
+	            return 'ಬೆಳಿಗ್ಗೆ';
+	        } else if (hour < 17) {
+	            return 'ಮಧ್ಯಾಹ್ನ';
+	        } else if (hour < 20) {
+	            return 'ಸಂಜೆ';
+	        } else {
+	            return 'ರಾತ್ರಿ';
+	        }
+	    },
+	    dayOfMonthOrdinalParse: /\d{1,2}(ನೇ)/,
+	    ordinal : function (number) {
+	        return number + 'ನೇ';
+	    },
+	    week : {
+	        dow : 0, // Sunday is the first day of the week.
+	        doy : 6  // The week that contains Jan 1st is the first week of the year.
+	    }
+	});
+
+	return kn;
+
+	})));
+
+
+/***/ }),
+/* 102 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Korean [ko]
@@ -30773,12 +31483,16 @@ module.exports =
 	    weekdaysShort : '일_월_화_수_목_금_토'.split('_'),
 	    weekdaysMin : '일_월_화_수_목_금_토'.split('_'),
 	    longDateFormat : {
-	        LT : 'A h시 m분',
-	        LTS : 'A h시 m분 s초',
+	        LT : 'A h:mm',
+	        LTS : 'A h:mm:ss',
 	        L : 'YYYY.MM.DD',
 	        LL : 'YYYY년 MMMM D일',
-	        LLL : 'YYYY년 MMMM D일 A h시 m분',
-	        LLLL : 'YYYY년 MMMM D일 dddd A h시 m분'
+	        LLL : 'YYYY년 MMMM D일 A h:mm',
+	        LLLL : 'YYYY년 MMMM D일 dddd A h:mm',
+	        l : 'YYYY.MM.DD',
+	        ll : 'YYYY년 MMMM D일',
+	        lll : 'YYYY년 MMMM D일 A h:mm',
+	        llll : 'YYYY년 MMMM D일 dddd A h:mm'
 	    },
 	    calendar : {
 	        sameDay : '오늘 LT',
@@ -30793,7 +31507,7 @@ module.exports =
 	        past : '%s 전',
 	        s : '몇 초',
 	        ss : '%d초',
-	        m : '일분',
+	        m : '1분',
 	        mm : '%d분',
 	        h : '한 시간',
 	        hh : '%d시간',
@@ -30804,7 +31518,7 @@ module.exports =
 	        y : '일 년',
 	        yy : '%d년'
 	    },
-	    ordinalParse : /\d{1,2}일/,
+	    dayOfMonthOrdinalParse : /\d{1,2}일/,
 	    ordinal : '%d일',
 	    meridiemParse : /오전|오후/,
 	    isPM : function (token) {
@@ -30820,9 +31534,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 99 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 103 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Kyrgyz [ky]
@@ -30896,7 +31610,7 @@ module.exports =
 	        y : 'бир жыл',
 	        yy : '%d жыл'
 	    },
-	    ordinalParse: /\d{1,2}-(чи|чы|чү|чу)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(чи|чы|чү|чу)/,
 	    ordinal : function (number) {
 	        var a = number % 10,
 	            b = number >= 100 ? 100 : null;
@@ -30913,9 +31627,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 100 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 104 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Luxembourgish [lb]
@@ -31042,7 +31756,7 @@ module.exports =
 	        y : processRelativeTime,
 	        yy : '%d Joer'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal: '%d.',
 	    week: {
 	        dow: 1, // Monday is the first day of the week.
@@ -31055,9 +31769,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 101 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 105 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Lao [lo]
@@ -31119,7 +31833,7 @@ module.exports =
 	        y : '1 ປີ',
 	        yy : '%d ປີ'
 	    },
-	    ordinalParse: /(ທີ່)\d{1,2}/,
+	    dayOfMonthOrdinalParse: /(ທີ່)\d{1,2}/,
 	    ordinal : function (number) {
 	        return 'ທີ່' + number;
 	    }
@@ -31130,9 +31844,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 102 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 106 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Lithuanian [lt]
@@ -31237,7 +31951,7 @@ module.exports =
 	        y : translateSingular,
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}-oji/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-oji/,
 	    ordinal : function (number) {
 	        return number + '-oji';
 	    },
@@ -31252,9 +31966,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 103 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 107 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Latvian [lv]
@@ -31341,7 +32055,7 @@ module.exports =
 	        y : relativeTimeWithSingular,
 	        yy : relativeTimeWithPlural
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -31354,9 +32068,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 104 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 108 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Montenegrin [me]
@@ -31457,7 +32171,7 @@ module.exports =
 	        y      : 'godinu',
 	        yy     : translator.translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -31470,9 +32184,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 105 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 109 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Maori [mi]
@@ -31526,7 +32240,7 @@ module.exports =
 	        y: 'he tau',
 	        yy: '%d tau'
 	    },
-	    ordinalParse: /\d{1,2}º/,
+	    dayOfMonthOrdinalParse: /\d{1,2}º/,
 	    ordinal: '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -31539,9 +32253,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 106 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 110 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Macedonian [mk]
@@ -31603,7 +32317,7 @@ module.exports =
 	        y : 'година',
 	        yy : '%d години'
 	    },
-	    ordinalParse: /\d{1,2}-(ев|ен|ти|ви|ри|ми)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(ев|ен|ти|ви|ри|ми)/,
 	    ordinal : function (number) {
 	        var lastDigit = number % 10,
 	            last2Digits = number % 100;
@@ -31634,9 +32348,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 107 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 111 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Malayalam [ml]
@@ -31720,9 +32434,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 108 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 112 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Marathi [mr]
@@ -31884,9 +32598,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 109 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 113 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Malay [ms-my]
@@ -31972,9 +32686,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 110 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 114 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Malay [ms]
@@ -32059,9 +32773,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 111 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 115 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Burmese [my]
@@ -32160,9 +32874,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 112 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 116 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Norwegian Bokmål [nb]
@@ -32215,7 +32929,7 @@ module.exports =
 	        y : 'ett år',
 	        yy : '%d år'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -32228,9 +32942,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 113 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 117 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Nepalese [ne]
@@ -32356,9 +33070,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 114 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 118 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Dutch (Belgium) [nl-be]
@@ -32381,7 +33095,9 @@ module.exports =
 	var nlBe = moment.defineLocale('nl-be', {
 	    months : 'januari_februari_maart_april_mei_juni_juli_augustus_september_oktober_november_december'.split('_'),
 	    monthsShort : function (m, format) {
-	        if (/-MMM-/.test(format)) {
+	        if (!m) {
+	            return monthsShortWithDots;
+	        } else if (/-MMM-/.test(format)) {
 	            return monthsShortWithoutDots[m.month()];
 	        } else {
 	            return monthsShortWithDots[m.month()];
@@ -32432,7 +33148,7 @@ module.exports =
 	        y : 'één jaar',
 	        yy : '%d jaar'
 	    },
-	    ordinalParse: /\d{1,2}(ste|de)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(ste|de)/,
 	    ordinal : function (number) {
 	        return number + ((number === 1 || number === 8 || number >= 20) ? 'ste' : 'de');
 	    },
@@ -32447,9 +33163,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 115 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 119 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Dutch [nl]
@@ -32472,7 +33188,9 @@ module.exports =
 	var nl = moment.defineLocale('nl', {
 	    months : 'januari_februari_maart_april_mei_juni_juli_augustus_september_oktober_november_december'.split('_'),
 	    monthsShort : function (m, format) {
-	        if (/-MMM-/.test(format)) {
+	        if (!m) {
+	            return monthsShortWithDots;
+	        } else if (/-MMM-/.test(format)) {
 	            return monthsShortWithoutDots[m.month()];
 	        } else {
 	            return monthsShortWithDots[m.month()];
@@ -32523,7 +33241,7 @@ module.exports =
 	        y : 'één jaar',
 	        yy : '%d jaar'
 	    },
-	    ordinalParse: /\d{1,2}(ste|de)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(ste|de)/,
 	    ordinal : function (number) {
 	        return number + ((number === 1 || number === 8 || number >= 20) ? 'ste' : 'de');
 	    },
@@ -32538,9 +33256,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 116 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 120 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Nynorsk [nn]
@@ -32590,7 +33308,7 @@ module.exports =
 	        y : 'eit år',
 	        yy : '%d år'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -32603,9 +33321,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 117 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 121 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Punjabi (India) [pa-in]
@@ -32732,9 +33450,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 118 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 122 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Polish [pl]
@@ -32772,7 +33490,9 @@ module.exports =
 
 	var pl = moment.defineLocale('pl', {
 	    months : function (momentToFormat, format) {
-	        if (format === '') {
+	        if (!momentToFormat) {
+	            return monthsNominative;
+	        } else if (format === '') {
 	            // Hack: if format empty we know this is used to generate
 	            // RegExp by moment. Give then back both valid forms of months
 	            // in RegExp ready format.
@@ -32829,7 +33549,7 @@ module.exports =
 	        y : 'rok',
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -32842,9 +33562,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 119 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 123 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Portuguese (Brazil) [pt-br]
@@ -32862,7 +33582,7 @@ module.exports =
 	    monthsShort : 'Jan_Fev_Mar_Abr_Mai_Jun_Jul_Ago_Set_Out_Nov_Dez'.split('_'),
 	    weekdays : 'Domingo_Segunda-feira_Terça-feira_Quarta-feira_Quinta-feira_Sexta-feira_Sábado'.split('_'),
 	    weekdaysShort : 'Dom_Seg_Ter_Qua_Qui_Sex_Sáb'.split('_'),
-	    weekdaysMin : 'Dom_2ª_3ª_4ª_5ª_6ª_Sáb'.split('_'),
+	    weekdaysMin : 'Do_2ª_3ª_4ª_5ª_6ª_Sá'.split('_'),
 	    weekdaysParseExact : true,
 	    longDateFormat : {
 	        LT : 'HH:mm',
@@ -32899,7 +33619,7 @@ module.exports =
 	        y : 'um ano',
 	        yy : '%d anos'
 	    },
-	    ordinalParse: /\d{1,2}º/,
+	    dayOfMonthOrdinalParse: /\d{1,2}º/,
 	    ordinal : '%dº'
 	});
 
@@ -32908,9 +33628,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 120 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 124 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Portuguese [pt]
@@ -32928,7 +33648,7 @@ module.exports =
 	    monthsShort : 'Jan_Fev_Mar_Abr_Mai_Jun_Jul_Ago_Set_Out_Nov_Dez'.split('_'),
 	    weekdays : 'Domingo_Segunda-Feira_Terça-Feira_Quarta-Feira_Quinta-Feira_Sexta-Feira_Sábado'.split('_'),
 	    weekdaysShort : 'Dom_Seg_Ter_Qua_Qui_Sex_Sáb'.split('_'),
-	    weekdaysMin : 'Dom_2ª_3ª_4ª_5ª_6ª_Sáb'.split('_'),
+	    weekdaysMin : 'Do_2ª_3ª_4ª_5ª_6ª_Sá'.split('_'),
 	    weekdaysParseExact : true,
 	    longDateFormat : {
 	        LT : 'HH:mm',
@@ -32965,7 +33685,7 @@ module.exports =
 	        y : 'um ano',
 	        yy : '%d anos'
 	    },
-	    ordinalParse: /\d{1,2}º/,
+	    dayOfMonthOrdinalParse: /\d{1,2}º/,
 	    ordinal : '%dº',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -32978,9 +33698,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 121 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 125 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Romanian [ro]
@@ -33058,9 +33778,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 122 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 126 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Russian [ru]
@@ -33219,7 +33939,7 @@ module.exports =
 	            return 'вечера';
 	        }
 	    },
-	    ordinalParse: /\d{1,2}-(й|го|я)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(й|го|я)/,
 	    ordinal: function (number, period) {
 	        switch (period) {
 	            case 'M':
@@ -33246,9 +33966,112 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 123 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 127 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Sindhi [sd]
+	//! author : Narain Sagar : https://github.com/narainsagar
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	var months = [
+	    'جنوري',
+	    'فيبروري',
+	    'مارچ',
+	    'اپريل',
+	    'مئي',
+	    'جون',
+	    'جولاءِ',
+	    'آگسٽ',
+	    'سيپٽمبر',
+	    'آڪٽوبر',
+	    'نومبر',
+	    'ڊسمبر'
+	];
+	var days = [
+	    'آچر',
+	    'سومر',
+	    'اڱارو',
+	    'اربع',
+	    'خميس',
+	    'جمع',
+	    'ڇنڇر'
+	];
+
+	var sd = moment.defineLocale('sd', {
+	    months : months,
+	    monthsShort : months,
+	    weekdays : days,
+	    weekdaysShort : days,
+	    weekdaysMin : days,
+	    longDateFormat : {
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
+	        L : 'DD/MM/YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY HH:mm',
+	        LLLL : 'dddd، D MMMM YYYY HH:mm'
+	    },
+	    meridiemParse: /صبح|شام/,
+	    isPM : function (input) {
+	        return 'شام' === input;
+	    },
+	    meridiem : function (hour, minute, isLower) {
+	        if (hour < 12) {
+	            return 'صبح';
+	        }
+	        return 'شام';
+	    },
+	    calendar : {
+	        sameDay : '[اڄ] LT',
+	        nextDay : '[سڀاڻي] LT',
+	        nextWeek : 'dddd [اڳين هفتي تي] LT',
+	        lastDay : '[ڪالهه] LT',
+	        lastWeek : '[گزريل هفتي] dddd [تي] LT',
+	        sameElse : 'L'
+	    },
+	    relativeTime : {
+	        future : '%s پوء',
+	        past : '%s اڳ',
+	        s : 'چند سيڪنڊ',
+	        m : 'هڪ منٽ',
+	        mm : '%d منٽ',
+	        h : 'هڪ ڪلاڪ',
+	        hh : '%d ڪلاڪ',
+	        d : 'هڪ ڏينهن',
+	        dd : '%d ڏينهن',
+	        M : 'هڪ مهينو',
+	        MM : '%d مهينا',
+	        y : 'هڪ سال',
+	        yy : '%d سال'
+	    },
+	    preparse: function (string) {
+	        return string.replace(/،/g, ',');
+	    },
+	    postformat: function (string) {
+	        return string.replace(/,/g, '،');
+	    },
+	    week : {
+	        dow : 1, // Monday is the first day of the week.
+	        doy : 4  // The week that contains Jan 4th is the first week of the year.
+	    }
+	});
+
+	return sd;
+
+	})));
+
+
+/***/ }),
+/* 128 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Northern Sami [se]
@@ -33299,7 +34122,7 @@ module.exports =
 	        y : 'okta jahki',
 	        yy : '%d jagit'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -33312,9 +34135,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 124 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 129 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Sinhalese [si]
@@ -33366,7 +34189,7 @@ module.exports =
 	        y : 'වසර',
 	        yy : 'වසර %d'
 	    },
-	    ordinalParse: /\d{1,2} වැනි/,
+	    dayOfMonthOrdinalParse: /\d{1,2} වැනි/,
 	    ordinal : function (number) {
 	        return number + ' වැනි';
 	    },
@@ -33388,9 +34211,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 125 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 130 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Slovak [sk]
@@ -33530,7 +34353,7 @@ module.exports =
 	        y : translate,
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -33543,9 +34366,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 126 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 131 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Slovenian [sl]
@@ -33697,7 +34520,7 @@ module.exports =
 	        y      : processRelativeTime,
 	        yy     : processRelativeTime
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -33710,9 +34533,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 127 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 132 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Albanian [sq]
@@ -33772,7 +34595,7 @@ module.exports =
 	        y : 'një vit',
 	        yy : '%d vite'
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -33785,9 +34608,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 128 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 133 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Serbian Cyrillic [sr-cyrl]
@@ -33887,7 +34710,7 @@ module.exports =
 	        y      : 'годину',
 	        yy     : translator.translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -33900,9 +34723,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 129 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 134 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Serbian [sr]
@@ -34002,7 +34825,7 @@ module.exports =
 	        y      : 'godinu',
 	        yy     : translator.translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -34015,9 +34838,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 130 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 135 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : siSwati [ss]
@@ -34096,7 +34919,7 @@ module.exports =
 	            return hour + 12;
 	        }
 	    },
-	    ordinalParse: /\d{1,2}/,
+	    dayOfMonthOrdinalParse: /\d{1,2}/,
 	    ordinal : '%d',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -34109,9 +34932,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 131 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 136 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Swedish [sv]
@@ -34163,7 +34986,7 @@ module.exports =
 	        y : 'ett år',
 	        yy : '%d år'
 	    },
-	    ordinalParse: /\d{1,2}(e|a)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(e|a)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'e' :
@@ -34183,9 +35006,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 132 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 137 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Swahili [sw]
@@ -34247,9 +35070,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 133 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 138 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Tamil [ta]
@@ -34324,7 +35147,7 @@ module.exports =
 	        y : 'ஒரு வருடம்',
 	        yy : '%d ஆண்டுகள்'
 	    },
-	    ordinalParse: /\d{1,2}வது/,
+	    dayOfMonthOrdinalParse: /\d{1,2}வது/,
 	    ordinal : function (number) {
 	        return number + 'வது';
 	    },
@@ -34382,9 +35205,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 134 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 139 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Telugu [te]
@@ -34435,7 +35258,7 @@ module.exports =
 	        y : 'ఒక సంవత్సరం',
 	        yy : '%d సంవత్సరాలు'
 	    },
-	    ordinalParse : /\d{1,2}వ/,
+	    dayOfMonthOrdinalParse : /\d{1,2}వ/,
 	    ordinal : '%dవ',
 	    meridiemParse: /రాత్రి|ఉదయం|మధ్యాహ్నం|సాయంత్రం/,
 	    meridiemHour : function (hour, meridiem) {
@@ -34476,9 +35299,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 135 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 140 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Tetun Dili (East Timor) [tet]
@@ -34529,7 +35352,7 @@ module.exports =
 	        y : 'tinan ida',
 	        yy : 'tinan %d'
 	    },
-	    ordinalParse: /\d{1,2}(st|nd|rd|th)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(st|nd|rd|th)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -34549,9 +35372,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 136 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 141 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Thai [th]
@@ -34575,7 +35398,7 @@ module.exports =
 	    longDateFormat : {
 	        LT : 'H:mm',
 	        LTS : 'H:mm:ss',
-	        L : 'YYYY/MM/DD',
+	        L : 'DD/MM/YYYY',
 	        LL : 'D MMMM YYYY',
 	        LLL : 'D MMMM YYYY เวลา H:mm',
 	        LLLL : 'วันddddที่ D MMMM YYYY เวลา H:mm'
@@ -34621,9 +35444,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 137 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 142 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Tagalog (Philippines) [tl-ph]
@@ -34673,7 +35496,7 @@ module.exports =
 	        y : 'isang taon',
 	        yy : '%d taon'
 	    },
-	    ordinalParse: /\d{1,2}/,
+	    dayOfMonthOrdinalParse: /\d{1,2}/,
 	    ordinal : function (number) {
 	        return number;
 	    },
@@ -34688,9 +35511,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 138 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 143 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Klingon [tlh]
@@ -34800,7 +35623,7 @@ module.exports =
 	        y : 'wa’ DIS',
 	        yy : translate
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -34813,9 +35636,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 139 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 144 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Turkish [tr]
@@ -34887,7 +35710,7 @@ module.exports =
 	        y : 'bir yıl',
 	        yy : '%d yıl'
 	    },
-	    ordinalParse: /\d{1,2}'(inci|nci|üncü|ncı|uncu|ıncı)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}'(inci|nci|üncü|ncı|uncu|ıncı)/,
 	    ordinal : function (number) {
 	        if (number === 0) {  // special case for zero
 	            return number + '\'ıncı';
@@ -34908,9 +35731,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 140 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 145 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Talossan [tzl]
@@ -34974,7 +35797,7 @@ module.exports =
 	        y : processRelativeTime,
 	        yy : processRelativeTime
 	    },
-	    ordinalParse: /\d{1,2}\./,
+	    dayOfMonthOrdinalParse: /\d{1,2}\./,
 	    ordinal : '%d.',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -35004,9 +35827,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 141 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 146 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Central Atlas Tamazight Latin [tzm-latn]
@@ -35067,9 +35890,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 142 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 147 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Central Atlas Tamazight [tzm]
@@ -35130,9 +35953,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 143 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 148 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Ukrainian [uk]
@@ -35173,8 +35996,13 @@ module.exports =
 	        'nominative': 'неділя_понеділок_вівторок_середа_четвер_п’ятниця_субота'.split('_'),
 	        'accusative': 'неділю_понеділок_вівторок_середу_четвер_п’ятницю_суботу'.split('_'),
 	        'genitive': 'неділі_понеділка_вівторка_середи_четверга_п’ятниці_суботи'.split('_')
-	    },
-	    nounCase = (/(\[[ВвУу]\]) ?dddd/).test(format) ?
+	    };
+
+	    if (!m) {
+	        return weekdays['nominative'];
+	    }
+
+	    var nounCase = (/(\[[ВвУу]\]) ?dddd/).test(format) ?
 	        'accusative' :
 	        ((/\[?(?:минулої|наступної)? ?\] ?dddd/).test(format) ?
 	            'genitive' :
@@ -35255,7 +36083,7 @@ module.exports =
 	            return 'вечора';
 	        }
 	    },
-	    ordinalParse: /\d{1,2}-(й|го)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}-(й|го)/,
 	    ordinal: function (number, period) {
 	        switch (period) {
 	            case 'M':
@@ -35281,9 +36109,176 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 144 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 149 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Urdu [ur]
+	//! author : Sawood Alam : https://github.com/ibnesayeed
+	//! author : Zack : https://github.com/ZackVision
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	var months = [
+	    'جنوری',
+	    'فروری',
+	    'مارچ',
+	    'اپریل',
+	    'مئی',
+	    'جون',
+	    'جولائی',
+	    'اگست',
+	    'ستمبر',
+	    'اکتوبر',
+	    'نومبر',
+	    'دسمبر'
+	];
+	var days = [
+	    'اتوار',
+	    'پیر',
+	    'منگل',
+	    'بدھ',
+	    'جمعرات',
+	    'جمعہ',
+	    'ہفتہ'
+	];
+
+	var ur = moment.defineLocale('ur', {
+	    months : months,
+	    monthsShort : months,
+	    weekdays : days,
+	    weekdaysShort : days,
+	    weekdaysMin : days,
+	    longDateFormat : {
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
+	        L : 'DD/MM/YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY HH:mm',
+	        LLLL : 'dddd، D MMMM YYYY HH:mm'
+	    },
+	    meridiemParse: /صبح|شام/,
+	    isPM : function (input) {
+	        return 'شام' === input;
+	    },
+	    meridiem : function (hour, minute, isLower) {
+	        if (hour < 12) {
+	            return 'صبح';
+	        }
+	        return 'شام';
+	    },
+	    calendar : {
+	        sameDay : '[آج بوقت] LT',
+	        nextDay : '[کل بوقت] LT',
+	        nextWeek : 'dddd [بوقت] LT',
+	        lastDay : '[گذشتہ روز بوقت] LT',
+	        lastWeek : '[گذشتہ] dddd [بوقت] LT',
+	        sameElse : 'L'
+	    },
+	    relativeTime : {
+	        future : '%s بعد',
+	        past : '%s قبل',
+	        s : 'چند سیکنڈ',
+	        m : 'ایک منٹ',
+	        mm : '%d منٹ',
+	        h : 'ایک گھنٹہ',
+	        hh : '%d گھنٹے',
+	        d : 'ایک دن',
+	        dd : '%d دن',
+	        M : 'ایک ماہ',
+	        MM : '%d ماہ',
+	        y : 'ایک سال',
+	        yy : '%d سال'
+	    },
+	    preparse: function (string) {
+	        return string.replace(/،/g, ',');
+	    },
+	    postformat: function (string) {
+	        return string.replace(/,/g, '،');
+	    },
+	    week : {
+	        dow : 1, // Monday is the first day of the week.
+	        doy : 4  // The week that contains Jan 4th is the first week of the year.
+	    }
+	});
+
+	return ur;
+
+	})));
+
+
+/***/ }),
+/* 150 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	//! moment.js locale configuration
+	//! locale : Uzbek Latin [uz-latn]
+	//! author : Rasulbek Mirzayev : github.com/Rasulbeeek
+
+	;(function (global, factory) {
+	    true ? factory(__webpack_require__(1)) :
+	   typeof define === 'function' && define.amd ? define(['../moment'], factory) :
+	   factory(global.moment)
+	}(this, (function (moment) { 'use strict';
+
+
+	var uzLatn = moment.defineLocale('uz-latn', {
+	    months : 'Yanvar_Fevral_Mart_Aprel_May_Iyun_Iyul_Avgust_Sentabr_Oktabr_Noyabr_Dekabr'.split('_'),
+	    monthsShort : 'Yan_Fev_Mar_Apr_May_Iyun_Iyul_Avg_Sen_Okt_Noy_Dek'.split('_'),
+	    weekdays : 'Yakshanba_Dushanba_Seshanba_Chorshanba_Payshanba_Juma_Shanba'.split('_'),
+	    weekdaysShort : 'Yak_Dush_Sesh_Chor_Pay_Jum_Shan'.split('_'),
+	    weekdaysMin : 'Ya_Du_Se_Cho_Pa_Ju_Sha'.split('_'),
+	    longDateFormat : {
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
+	        L : 'DD/MM/YYYY',
+	        LL : 'D MMMM YYYY',
+	        LLL : 'D MMMM YYYY HH:mm',
+	        LLLL : 'D MMMM YYYY, dddd HH:mm'
+	    },
+	    calendar : {
+	        sameDay : '[Bugun soat] LT [da]',
+	        nextDay : '[Ertaga] LT [da]',
+	        nextWeek : 'dddd [kuni soat] LT [da]',
+	        lastDay : '[Kecha soat] LT [da]',
+	        lastWeek : '[O\'tgan] dddd [kuni soat] LT [da]',
+	        sameElse : 'L'
+	    },
+	    relativeTime : {
+	        future : 'Yaqin %s ichida',
+	        past : 'Bir necha %s oldin',
+	        s : 'soniya',
+	        m : 'bir daqiqa',
+	        mm : '%d daqiqa',
+	        h : 'bir soat',
+	        hh : '%d soat',
+	        d : 'bir kun',
+	        dd : '%d kun',
+	        M : 'bir oy',
+	        MM : '%d oy',
+	        y : 'bir yil',
+	        yy : '%d yil'
+	    },
+	    week : {
+	        dow : 1, // Monday is the first day of the week.
+	        doy : 7  // The week that contains Jan 1st is the first week of the year.
+	    }
+	});
+
+	return uzLatn;
+
+	})));
+
+
+/***/ }),
+/* 151 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Uzbek [uz]
@@ -35344,9 +36339,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 145 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 152 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Vietnamese [vi]
@@ -35413,7 +36408,7 @@ module.exports =
 	        y : 'một năm',
 	        yy : '%d năm'
 	    },
-	    ordinalParse: /\d{1,2}/,
+	    dayOfMonthOrdinalParse: /\d{1,2}/,
 	    ordinal : function (number) {
 	        return number;
 	    },
@@ -35428,9 +36423,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 146 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 153 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Pseudo [x-pseudo]
@@ -35481,7 +36476,7 @@ module.exports =
 	        y : 'á ~ýéár',
 	        yy : '%d ý~éárs'
 	    },
-	    ordinalParse: /\d{1,2}(th|st|nd|rd)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(th|st|nd|rd)/,
 	    ordinal : function (number) {
 	        var b = number % 10,
 	            output = (~~(number % 100 / 10) === 1) ? 'th' :
@@ -35501,9 +36496,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 147 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 154 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Yoruba Nigeria [yo]
@@ -35553,7 +36548,7 @@ module.exports =
 	        y : 'ọdún kan',
 	        yy : 'ọdún %d'
 	    },
-	    ordinalParse : /ọjọ́\s\d{1,2}/,
+	    dayOfMonthOrdinalParse : /ọjọ́\s\d{1,2}/,
 	    ordinal : 'ọjọ́ %d',
 	    week : {
 	        dow : 1, // Monday is the first day of the week.
@@ -35566,9 +36561,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 148 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 155 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Chinese (China) [zh-cn]
@@ -35589,16 +36584,16 @@ module.exports =
 	    weekdaysShort : '周日_周一_周二_周三_周四_周五_周六'.split('_'),
 	    weekdaysMin : '日_一_二_三_四_五_六'.split('_'),
 	    longDateFormat : {
-	        LT : 'Ah点mm分',
-	        LTS : 'Ah点m分s秒',
-	        L : 'YYYY-MM-DD',
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
+	        L : 'YYYY年MMMD日',
 	        LL : 'YYYY年MMMD日',
 	        LLL : 'YYYY年MMMD日Ah点mm分',
 	        LLLL : 'YYYY年MMMD日ddddAh点mm分',
-	        l : 'YYYY-MM-DD',
+	        l : 'YYYY年MMMD日',
 	        ll : 'YYYY年MMMD日',
-	        lll : 'YYYY年MMMD日Ah点mm分',
-	        llll : 'YYYY年MMMD日ddddAh点mm分'
+	        lll : 'YYYY年MMMD日 HH:mm',
+	        llll : 'YYYY年MMMD日dddd HH:mm'
 	    },
 	    meridiemParse: /凌晨|早上|上午|中午|下午|晚上/,
 	    meridiemHour: function (hour, meridiem) {
@@ -35632,30 +36627,14 @@ module.exports =
 	        }
 	    },
 	    calendar : {
-	        sameDay : function () {
-	            return this.minutes() === 0 ? '[今天]Ah[点整]' : '[今天]LT';
-	        },
-	        nextDay : function () {
-	            return this.minutes() === 0 ? '[明天]Ah[点整]' : '[明天]LT';
-	        },
-	        lastDay : function () {
-	            return this.minutes() === 0 ? '[昨天]Ah[点整]' : '[昨天]LT';
-	        },
-	        nextWeek : function () {
-	            var startOfWeek, prefix;
-	            startOfWeek = moment().startOf('week');
-	            prefix = this.diff(startOfWeek, 'days') >= 7 ? '[下]' : '[本]';
-	            return this.minutes() === 0 ? prefix + 'dddAh点整' : prefix + 'dddAh点mm';
-	        },
-	        lastWeek : function () {
-	            var startOfWeek, prefix;
-	            startOfWeek = moment().startOf('week');
-	            prefix = this.unix() < startOfWeek.unix()  ? '[上]' : '[本]';
-	            return this.minutes() === 0 ? prefix + 'dddAh点整' : prefix + 'dddAh点mm';
-	        },
-	        sameElse : 'LL'
+	        sameDay : '[今天]LT',
+	        nextDay : '[明天]LT',
+	        nextWeek : '[下]ddddLT',
+	        lastDay : '[昨天]LT',
+	        lastWeek : '[上]ddddLT',
+	        sameElse : 'L'
 	    },
-	    ordinalParse: /\d{1,2}(日|月|周)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(日|月|周)/,
 	    ordinal : function (number, period) {
 	        switch (period) {
 	            case 'd':
@@ -35698,9 +36677,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 149 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 156 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Chinese (Hong Kong) [zh-hk]
@@ -35722,16 +36701,16 @@ module.exports =
 	    weekdaysShort : '週日_週一_週二_週三_週四_週五_週六'.split('_'),
 	    weekdaysMin : '日_一_二_三_四_五_六'.split('_'),
 	    longDateFormat : {
-	        LT : 'Ah點mm分',
-	        LTS : 'Ah點m分s秒',
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
 	        L : 'YYYY年MMMD日',
 	        LL : 'YYYY年MMMD日',
-	        LLL : 'YYYY年MMMD日Ah點mm分',
-	        LLLL : 'YYYY年MMMD日ddddAh點mm分',
+	        LLL : 'YYYY年MMMD日 HH:mm',
+	        LLLL : 'YYYY年MMMD日dddd HH:mm',
 	        l : 'YYYY年MMMD日',
 	        ll : 'YYYY年MMMD日',
-	        lll : 'YYYY年MMMD日Ah點mm分',
-	        llll : 'YYYY年MMMD日ddddAh點mm分'
+	        lll : 'YYYY年MMMD日 HH:mm',
+	        llll : 'YYYY年MMMD日dddd HH:mm'
 	    },
 	    meridiemParse: /凌晨|早上|上午|中午|下午|晚上/,
 	    meridiemHour : function (hour, meridiem) {
@@ -35770,7 +36749,7 @@ module.exports =
 	        lastWeek : '[上]ddddLT',
 	        sameElse : 'L'
 	    },
-	    ordinalParse: /\d{1,2}(日|月|週)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(日|月|週)/,
 	    ordinal : function (number, period) {
 	        switch (period) {
 	            case 'd' :
@@ -35808,9 +36787,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 150 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 157 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	//! moment.js locale configuration
 	//! locale : Chinese (Taiwan) [zh-tw]
@@ -35831,16 +36810,16 @@ module.exports =
 	    weekdaysShort : '週日_週一_週二_週三_週四_週五_週六'.split('_'),
 	    weekdaysMin : '日_一_二_三_四_五_六'.split('_'),
 	    longDateFormat : {
-	        LT : 'Ah點mm分',
-	        LTS : 'Ah點m分s秒',
+	        LT : 'HH:mm',
+	        LTS : 'HH:mm:ss',
 	        L : 'YYYY年MMMD日',
 	        LL : 'YYYY年MMMD日',
-	        LLL : 'YYYY年MMMD日Ah點mm分',
-	        LLLL : 'YYYY年MMMD日ddddAh點mm分',
+	        LLL : 'YYYY年MMMD日 HH:mm',
+	        LLLL : 'YYYY年MMMD日dddd HH:mm',
 	        l : 'YYYY年MMMD日',
 	        ll : 'YYYY年MMMD日',
-	        lll : 'YYYY年MMMD日Ah點mm分',
-	        llll : 'YYYY年MMMD日ddddAh點mm分'
+	        lll : 'YYYY年MMMD日 HH:mm',
+	        llll : 'YYYY年MMMD日dddd HH:mm'
 	    },
 	    meridiemParse: /凌晨|早上|上午|中午|下午|晚上/,
 	    meridiemHour : function (hour, meridiem) {
@@ -35879,7 +36858,7 @@ module.exports =
 	        lastWeek : '[上]ddddLT',
 	        sameElse : 'L'
 	    },
-	    ordinalParse: /\d{1,2}(日|月|週)/,
+	    dayOfMonthOrdinalParse: /\d{1,2}(日|月|週)/,
 	    ordinal : function (number, period) {
 	        switch (period) {
 	            case 'd' :
@@ -35917,9 +36896,9 @@ module.exports =
 	})));
 
 
-/***/ },
-/* 151 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 158 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -35933,10 +36912,10 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticUIEvent = __webpack_require__(39);
-	var ViewportMetrics = __webpack_require__(341);
+	var SyntheticUIEvent = __webpack_require__(38);
+	var ViewportMetrics = __webpack_require__(313);
 
-	var getEventModifierState = __webpack_require__(177);
+	var getEventModifierState = __webpack_require__(185);
 
 	/**
 	 * @interface MouseEvent
@@ -35993,9 +36972,9 @@ module.exports =
 
 	module.exports = SyntheticMouseEvent;
 
-/***/ },
-/* 152 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 159 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -36107,6 +37086,8 @@ module.exports =
 	    return !!this._isInTransaction;
 	  },
 
+	  /* eslint-disable space-before-function-paren */
+
 	  /**
 	   * Executes the function within a safety window. Use this for the top level
 	   * methods that result in large amounts of computation/mutations that would
@@ -36125,6 +37106,7 @@ module.exports =
 	   * @return {*} Return value from `method`.
 	   */
 	  perform: function (method, scope, a, b, c, d, e, f) {
+	    /* eslint-enable space-before-function-paren */
 	    !!this.isInTransaction() ?  true ? invariant(false, 'Transaction.perform(...): Cannot initialize a transaction when there is already an outstanding transaction.') : _prodInvariant('27') : void 0;
 	    var errorThrown;
 	    var ret;
@@ -36222,9 +37204,9 @@ module.exports =
 
 	module.exports = TransactionImpl;
 
-/***/ },
-/* 153 */
-/***/ function(module, exports) {
+/***/ }),
+/* 160 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -36330,7 +37312,6 @@ module.exports =
 	}
 	// end code copied and modified from escape-html
 
-
 	/**
 	 * Escapes text to prevent scripting attacks.
 	 *
@@ -36349,9 +37330,9 @@ module.exports =
 
 	module.exports = escapeTextContentForBrowser;
 
-/***/ },
-/* 154 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 161 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -36369,11 +37350,11 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _deprecateObjectProperties = __webpack_require__(155);
+	var _deprecateObjectProperties = __webpack_require__(162);
 
 	var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
 
-	var _getRouteParams = __webpack_require__(563);
+	var _getRouteParams = __webpack_require__(540);
 
 	var _getRouteParams2 = _interopRequireDefault(_getRouteParams);
 
@@ -36510,9 +37491,9 @@ module.exports =
 	exports.default = RouterContext;
 	module.exports = exports['default'];
 
-/***/ },
-/* 155 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 162 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -36590,17 +37571,47 @@ module.exports =
 
 	exports.default = deprecateObjectProperties;
 
-/***/ },
-/* 156 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 163 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * 
+	 */
 
 	'use strict';
 
-	var _isFunction = __webpack_require__(470);
+	var canDefineProperty = false;
+	if (true) {
+	  try {
+	    // $FlowFixMe https://github.com/facebook/flow/issues/285
+	    Object.defineProperty({}, 'x', { get: function () {} });
+	    canDefineProperty = true;
+	  } catch (x) {
+	    // IE will fail on defineProperty
+	  }
+	}
+
+	module.exports = canDefineProperty;
+
+/***/ }),
+/* 164 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	'use strict';
+
+	var _isFunction = __webpack_require__(446);
 
 	var _isFunction2 = _interopRequireDefault(_isFunction);
 
-	var _antwarConfig = __webpack_require__(362);
+	var _antwarConfig = __webpack_require__(337);
 
 	var _antwarConfig2 = _interopRequireDefault(_antwarConfig);
 
@@ -36612,17 +37623,17 @@ module.exports =
 	  module.exports = _antwarConfig2.default;
 	}
 
-/***/ },
-/* 157 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 165 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	/* eslint-disable no-shadow */
-	var path = __webpack_require__(361);
+	var path = __webpack_require__(336);
 	var _ = __webpack_require__(23);
-	var config = __webpack_require__(156);
-	var pageHooks = __webpack_require__(391)(config);
+	var config = __webpack_require__(164);
+	var pageHooks = __webpack_require__(366)(config);
 
 	var siteFunctions = config.functions || {};
 
@@ -36842,9 +37853,9 @@ module.exports =
 	  return file;
 	}
 
-/***/ },
-/* 158 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 166 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -36856,29 +37867,29 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _antwarInteractive = __webpack_require__(41);
+	var _antwarInteractive = __webpack_require__(40);
 
 	var _antwarInteractive2 = _interopRequireDefault(_antwarInteractive);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _sidebar = __webpack_require__(400);
+	var _sidebar = __webpack_require__(375);
 
 	var _sidebar2 = _interopRequireDefault(_sidebar);
 
-	var _sidecar = __webpack_require__(401);
+	var _sidecar = __webpack_require__(376);
 
 	var _sidecar2 = _interopRequireDefault(_sidecar);
 
-	var _contributors = __webpack_require__(190);
+	var _contributors = __webpack_require__(194);
 
 	var _contributors2 = _interopRequireDefault(_contributors);
 
-	__webpack_require__(425);
+	__webpack_require__(401);
 
-	__webpack_require__(428);
+	__webpack_require__(404);
 
 	var _lodash = __webpack_require__(23);
 
@@ -36933,9 +37944,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 159 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 167 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -36947,27 +37958,27 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _antwarInteractive = __webpack_require__(41);
+	var _antwarInteractive = __webpack_require__(40);
 
 	var _antwarInteractive2 = _interopRequireDefault(_antwarInteractive);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _app = __webpack_require__(409);
+	var _app = __webpack_require__(384);
 
 	var _app2 = _interopRequireDefault(_app);
 
-	__webpack_require__(191);
+	__webpack_require__(195);
 
-	__webpack_require__(438);
+	__webpack_require__(414);
 
-	__webpack_require__(435);
+	__webpack_require__(411);
 
-	__webpack_require__(437);
+	__webpack_require__(413);
 
-	__webpack_require__(436);
+	__webpack_require__(412);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -36993,9 +38004,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 160 */
-/***/ function(module, exports) {
+/***/ }),
+/* 168 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -37065,9 +38076,9 @@ module.exports =
 
 	module.exports = shallowEqual;
 
-/***/ },
-/* 161 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 169 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -37089,13 +38100,13 @@ module.exports =
 
 	var _PathUtils = __webpack_require__(21);
 
-	var _ExecutionEnvironment = __webpack_require__(33);
+	var _ExecutionEnvironment = __webpack_require__(32);
 
 	var _DOMUtils = __webpack_require__(42);
 
-	var _DOMStateStorage = __webpack_require__(195);
+	var _DOMStateStorage = __webpack_require__(199);
 
-	var _createDOMHistory = __webpack_require__(197);
+	var _createDOMHistory = __webpack_require__(201);
 
 	var _createDOMHistory2 = _interopRequireDefault(_createDOMHistory);
 
@@ -37316,9 +38327,9 @@ module.exports =
 	exports['default'] = createHashHistory;
 	module.exports = exports['default'];
 
-/***/ },
-/* 162 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 170 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -37345,9 +38356,9 @@ module.exports =
 	exports['default'] = runTransitionHook;
 	module.exports = exports['default'];
 
-/***/ },
-/* 163 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 171 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -37361,11 +38372,11 @@ module.exports =
 
 	var _warning2 = _interopRequireDefault(_warning);
 
-	var _ExecutionEnvironment = __webpack_require__(33);
+	var _ExecutionEnvironment = __webpack_require__(32);
 
 	var _PathUtils = __webpack_require__(21);
 
-	var _runTransitionHook = __webpack_require__(162);
+	var _runTransitionHook = __webpack_require__(170);
 
 	var _runTransitionHook2 = _interopRequireDefault(_runTransitionHook);
 
@@ -37508,11 +38519,11 @@ module.exports =
 	exports['default'] = useBasename;
 	module.exports = exports['default'];
 
-/***/ },
-/* 164 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 172 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var root = __webpack_require__(468);
+	var root = __webpack_require__(444);
 
 	/** Built-in value references. */
 	var Symbol = root.Symbol;
@@ -37520,9 +38531,9 @@ module.exports =
 	module.exports = Symbol;
 
 
-/***/ },
-/* 165 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 173 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -37536,14 +38547,14 @@ module.exports =
 
 	'use strict';
 
-	var DOMLazyTree = __webpack_require__(34);
-	var Danger = __webpack_require__(486);
+	var DOMLazyTree = __webpack_require__(33);
+	var Danger = __webpack_require__(464);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactInstrumentation = __webpack_require__(13);
 
-	var createMicrosoftUnsafeLocalFunction = __webpack_require__(175);
-	var setInnerHTML = __webpack_require__(180);
-	var setTextContent = __webpack_require__(347);
+	var createMicrosoftUnsafeLocalFunction = __webpack_require__(183);
+	var setInnerHTML = __webpack_require__(188);
+	var setTextContent = __webpack_require__(320);
 
 	function getNodeAfter(parentNode, node) {
 	  // Special case for text components, which return [open, close] comments
@@ -37671,7 +38682,6 @@ module.exports =
 	 * Operations for updating with DOM children.
 	 */
 	var DOMChildrenOperations = {
-
 	  dangerouslyReplaceNodeWithMarkup: dangerouslyReplaceNodeWithMarkup,
 
 	  replaceDelimitedText: replaceDelimitedText,
@@ -37697,7 +38707,10 @@ module.exports =
 	            ReactInstrumentation.debugTool.onHostOperation({
 	              instanceID: parentNodeDebugID,
 	              type: 'insert child',
-	              payload: { toIndex: update.toIndex, content: update.content.toString() }
+	              payload: {
+	                toIndex: update.toIndex,
+	                content: update.content.toString()
+	              }
 	            });
 	          }
 	          break;
@@ -37744,14 +38757,13 @@ module.exports =
 	      }
 	    }
 	  }
-
 	};
 
 	module.exports = DOMChildrenOperations;
 
-/***/ },
-/* 166 */
-/***/ function(module, exports) {
+/***/ }),
+/* 174 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -37773,9 +38785,9 @@ module.exports =
 
 	module.exports = DOMNamespaces;
 
-/***/ },
-/* 167 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 175 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -37887,7 +38899,6 @@ module.exports =
 	 * @see {EventPluginHub}
 	 */
 	var EventPluginRegistry = {
-
 	  /**
 	   * Ordered list of injected plugins.
 	   */
@@ -38027,14 +39038,13 @@ module.exports =
 	      }
 	    }
 	  }
-
 	};
 
 	module.exports = EventPluginRegistry;
 
-/***/ },
-/* 168 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 176 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38050,7 +39060,7 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var ReactErrorUtils = __webpack_require__(173);
+	var ReactErrorUtils = __webpack_require__(181);
 
 	var invariant = __webpack_require__(3);
 	var warning = __webpack_require__(4);
@@ -38262,9 +39272,9 @@ module.exports =
 
 	module.exports = EventPluginUtils;
 
-/***/ },
-/* 169 */
-/***/ function(module, exports) {
+/***/ }),
+/* 177 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38325,9 +39335,9 @@ module.exports =
 
 	module.exports = KeyEscapeUtils;
 
-/***/ },
-/* 170 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 178 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38343,20 +39353,23 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var React = __webpack_require__(31);
-	var ReactPropTypesSecret = __webpack_require__(338);
+	var ReactPropTypesSecret = __webpack_require__(310);
+	var propTypesFactory = __webpack_require__(299);
+
+	var React = __webpack_require__(30);
+	var PropTypes = propTypesFactory(React.isValidElement);
 
 	var invariant = __webpack_require__(3);
 	var warning = __webpack_require__(4);
 
 	var hasReadOnlyValue = {
-	  'button': true,
-	  'checkbox': true,
-	  'image': true,
-	  'hidden': true,
-	  'radio': true,
-	  'reset': true,
-	  'submit': true
+	  button: true,
+	  checkbox: true,
+	  image: true,
+	  hidden: true,
+	  radio: true,
+	  reset: true,
+	  submit: true
 	};
 
 	function _assertSingleLink(inputProps) {
@@ -38385,7 +39398,7 @@ module.exports =
 	    }
 	    return new Error('You provided a `checked` prop to a form field without an ' + '`onChange` handler. This will render a read-only field. If ' + 'the field should be mutable use `defaultChecked`. Otherwise, ' + 'set either `onChange` or `readOnly`.');
 	  },
-	  onChange: React.PropTypes.func
+	  onChange: PropTypes.func
 	};
 
 	var loggedTypeFailures = {};
@@ -38464,9 +39477,9 @@ module.exports =
 
 	module.exports = LinkedValueUtils;
 
-/***/ },
-/* 171 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 179 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38482,12 +39495,12 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var EventPluginRegistry = __webpack_require__(167);
-	var ReactEventEmitterMixin = __webpack_require__(508);
-	var ViewportMetrics = __webpack_require__(341);
+	var EventPluginRegistry = __webpack_require__(175);
+	var ReactEventEmitterMixin = __webpack_require__(486);
+	var ViewportMetrics = __webpack_require__(313);
 
-	var getVendorPrefixedEventName = __webpack_require__(546);
-	var isEventSupported = __webpack_require__(179);
+	var getVendorPrefixedEventName = __webpack_require__(523);
+	var isEventSupported = __webpack_require__(187);
 
 	/**
 	 * Summary of `ReactBrowserEventEmitter` event handling:
@@ -38645,7 +39658,6 @@ module.exports =
 	 * @internal
 	 */
 	var ReactBrowserEventEmitter = _assign({}, ReactEventEmitterMixin, {
-
 	  /**
 	   * Injectable event backend
 	   */
@@ -38719,14 +39731,12 @@ module.exports =
 	            ReactBrowserEventEmitter.ReactEventListener.trapBubbledEvent('topWheel', 'DOMMouseScroll', mountAt);
 	          }
 	        } else if (dependency === 'topScroll') {
-
 	          if (isEventSupported('scroll', true)) {
 	            ReactBrowserEventEmitter.ReactEventListener.trapCapturedEvent('topScroll', 'scroll', mountAt);
 	          } else {
 	            ReactBrowserEventEmitter.ReactEventListener.trapBubbledEvent('topScroll', 'scroll', ReactBrowserEventEmitter.ReactEventListener.WINDOW_HANDLE);
 	          }
 	        } else if (dependency === 'topFocus' || dependency === 'topBlur') {
-
 	          if (isEventSupported('focus', true)) {
 	            ReactBrowserEventEmitter.ReactEventListener.trapCapturedEvent('topFocus', 'focus', mountAt);
 	            ReactBrowserEventEmitter.ReactEventListener.trapCapturedEvent('topBlur', 'blur', mountAt);
@@ -38791,14 +39801,13 @@ module.exports =
 	      isMonitoringScrollValue = true;
 	    }
 	  }
-
 	});
 
 	module.exports = ReactBrowserEventEmitter;
 
-/***/ },
-/* 172 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 180 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -38820,7 +39829,6 @@ module.exports =
 	var injected = false;
 
 	var ReactComponentEnvironment = {
-
 	  /**
 	   * Optionally injectable hook for swapping out mount images in the middle of
 	   * the tree.
@@ -38841,14 +39849,13 @@ module.exports =
 	      injected = true;
 	    }
 	  }
-
 	};
 
 	module.exports = ReactComponentEnvironment;
 
-/***/ },
-/* 173 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 181 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38917,7 +39924,6 @@ module.exports =
 	      var evtType = 'react-' + name;
 	      fakeNode.addEventListener(evtType, boundFunc, false);
 	      var evt = document.createEvent('Event');
-	      // $FlowFixMe https://github.com/facebook/flow/issues/2336
 	      evt.initEvent(evtType, false, false);
 	      fakeNode.dispatchEvent(evt);
 	      fakeNode.removeEventListener(evtType, boundFunc, false);
@@ -38927,9 +39933,9 @@ module.exports =
 
 	module.exports = ReactErrorUtils;
 
-/***/ },
-/* 174 */
-/***/ function(module, exports) {
+/***/ }),
+/* 182 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -38953,7 +39959,6 @@ module.exports =
 	// TODO: Replace this with ES6: var ReactInstanceMap = new Map();
 
 	var ReactInstanceMap = {
-
 	  /**
 	   * This API should be called `delete` but we'd have to make sure to always
 	   * transform these to strings for IE support. When this transform is fully
@@ -38974,14 +39979,13 @@ module.exports =
 	  set: function (key, value) {
 	    key._reactInternalInstance = value;
 	  }
-
 	};
 
 	module.exports = ReactInstanceMap;
 
-/***/ },
-/* 175 */
-/***/ function(module, exports) {
+/***/ }),
+/* 183 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39015,9 +40019,9 @@ module.exports =
 
 	module.exports = createMicrosoftUnsafeLocalFunction;
 
-/***/ },
-/* 176 */
-/***/ function(module, exports) {
+/***/ }),
+/* 184 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39069,9 +40073,9 @@ module.exports =
 
 	module.exports = getEventCharCode;
 
-/***/ },
-/* 177 */
-/***/ function(module, exports) {
+/***/ }),
+/* 185 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39091,10 +40095,10 @@ module.exports =
 	 */
 
 	var modifierKeyToProp = {
-	  'Alt': 'altKey',
-	  'Control': 'ctrlKey',
-	  'Meta': 'metaKey',
-	  'Shift': 'shiftKey'
+	  Alt: 'altKey',
+	  Control: 'ctrlKey',
+	  Meta: 'metaKey',
+	  Shift: 'shiftKey'
 	};
 
 	// IE8 does not implement getModifierState so we simply map it to the only
@@ -39116,9 +40120,9 @@ module.exports =
 
 	module.exports = getEventModifierState;
 
-/***/ },
-/* 178 */
-/***/ function(module, exports) {
+/***/ }),
+/* 186 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39155,9 +40159,9 @@ module.exports =
 
 	module.exports = getEventTarget;
 
-/***/ },
-/* 179 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 187 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39219,9 +40223,9 @@ module.exports =
 
 	module.exports = isEventSupported;
 
-/***/ },
-/* 180 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 188 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -39236,12 +40240,12 @@ module.exports =
 	'use strict';
 
 	var ExecutionEnvironment = __webpack_require__(9);
-	var DOMNamespaces = __webpack_require__(166);
+	var DOMNamespaces = __webpack_require__(174);
 
 	var WHITESPACE_TEST = /^[ \r\n\t\f]/;
 	var NONVISIBLE_TEST = /<(!--|link|noscript|meta|script|style)[ \r\n\t\f\/>]/;
 
-	var createMicrosoftUnsafeLocalFunction = __webpack_require__(175);
+	var createMicrosoftUnsafeLocalFunction = __webpack_require__(183);
 
 	// SVG temp container for IE lacking innerHTML
 	var reusableSVGContainer;
@@ -39301,7 +40305,7 @@ module.exports =
 	        // in hopes that this is preserved even if "\uFEFF" is transformed to
 	        // the actual Unicode character (by Babel, for example).
 	        // https://github.com/mishoo/UglifyJS2/blob/v2.4.20/lib/parse.js#L216
-	        node.innerHTML = String.fromCharCode(0xFEFF) + html;
+	        node.innerHTML = String.fromCharCode(0xfeff) + html;
 
 	        // deleteData leaves an empty `TextNode` which offsets the index of all
 	        // children. Definitely want to avoid this.
@@ -39321,9 +40325,9 @@ module.exports =
 
 	module.exports = setInnerHTML;
 
-/***/ },
-/* 181 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 189 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -39448,7 +40452,6 @@ module.exports =
 	      // but
 	      case 'option':
 	        return tag === '#text';
-
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intd
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-incaption
 	      // No special behavior since these rules fall back to "in body" mode for
@@ -39457,25 +40460,20 @@ module.exports =
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intr
 	      case 'tr':
 	        return tag === 'th' || tag === 'td' || tag === 'style' || tag === 'script' || tag === 'template';
-
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intbody
 	      case 'tbody':
 	      case 'thead':
 	      case 'tfoot':
 	        return tag === 'tr' || tag === 'style' || tag === 'script' || tag === 'template';
-
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-incolgroup
 	      case 'colgroup':
 	        return tag === 'col' || tag === 'template';
-
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intable
 	      case 'table':
 	        return tag === 'caption' || tag === 'colgroup' || tag === 'tbody' || tag === 'tfoot' || tag === 'thead' || tag === 'style' || tag === 'script' || tag === 'template';
-
 	      // https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inhead
 	      case 'head':
 	        return tag === 'base' || tag === 'basefont' || tag === 'bgsound' || tag === 'link' || tag === 'meta' || tag === 'title' || tag === 'noscript' || tag === 'noframes' || tag === 'style' || tag === 'script' || tag === 'template';
-
 	      // https://html.spec.whatwg.org/multipage/semantics.html#the-html-element
 	      case 'html':
 	        return tag === 'head' || tag === 'body';
@@ -39551,16 +40549,11 @@ module.exports =
 	      case 'section':
 	      case 'summary':
 	      case 'ul':
-
 	      case 'pre':
 	      case 'listing':
-
 	      case 'table':
-
 	      case 'hr':
-
 	      case 'xmp':
-
 	      case 'h1':
 	      case 'h2':
 	      case 'h3':
@@ -39676,7 +40669,7 @@ module.exports =
 	          tagDisplayName = 'Text nodes';
 	        } else {
 	          tagDisplayName = 'Whitespace text nodes';
-	          whitespaceInfo = ' Make sure you don\'t have any extra whitespace between tags on ' + 'each line of your source code.';
+	          whitespaceInfo = " Make sure you don't have any extra whitespace between tags on " + 'each line of your source code.';
 	        }
 	      } else {
 	        tagDisplayName = '<' + childTag + '>';
@@ -39707,9 +40700,9 @@ module.exports =
 
 	module.exports = validateDOMNesting;
 
-/***/ },
-/* 182 */
-/***/ function(module, exports) {
+/***/ }),
+/* 190 */
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -39800,9 +40793,9 @@ module.exports =
 	  });
 	}
 
-/***/ },
-/* 183 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 191 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -39811,7 +40804,7 @@ module.exports =
 
 	var _react = __webpack_require__(2);
 
-	var _deprecateObjectProperties = __webpack_require__(155);
+	var _deprecateObjectProperties = __webpack_require__(162);
 
 	var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
 
@@ -39906,9 +40899,9 @@ module.exports =
 
 	exports.default = defaultExport;
 
-/***/ },
-/* 184 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 192 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -39922,21 +40915,21 @@ module.exports =
 
 	var _routerWarning2 = _interopRequireDefault(_routerWarning);
 
-	var _computeChangedRoutes2 = __webpack_require__(561);
+	var _computeChangedRoutes2 = __webpack_require__(538);
 
 	var _computeChangedRoutes3 = _interopRequireDefault(_computeChangedRoutes2);
 
-	var _TransitionUtils = __webpack_require__(558);
+	var _TransitionUtils = __webpack_require__(535);
 
-	var _isActive2 = __webpack_require__(565);
+	var _isActive2 = __webpack_require__(542);
 
 	var _isActive3 = _interopRequireDefault(_isActive2);
 
-	var _getComponents = __webpack_require__(562);
+	var _getComponents = __webpack_require__(539);
 
 	var _getComponents2 = _interopRequireDefault(_getComponents);
 
-	var _matchRoutes = __webpack_require__(567);
+	var _matchRoutes = __webpack_require__(544);
 
 	var _matchRoutes2 = _interopRequireDefault(_matchRoutes);
 
@@ -40213,12 +41206,12 @@ module.exports =
 
 	module.exports = exports['default'];
 
-/***/ },
-/* 185 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 193 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
-	 * Copyright 2013-present, Facebook, Inc.
+	 * Copyright 2014-2015, Facebook, Inc.
 	 * All rights reserved.
 	 *
 	 * This source code is licensed under the BSD-style license found in the
@@ -40229,319 +41222,62 @@ module.exports =
 
 	'use strict';
 
-	var _prodInvariant = __webpack_require__(27);
-
-	var ReactNoopUpdateQueue = __webpack_require__(186);
-
-	var canDefineProperty = __webpack_require__(188);
-	var emptyObject = __webpack_require__(32);
-	var invariant = __webpack_require__(3);
-	var warning = __webpack_require__(4);
-
 	/**
-	 * Base class helpers for the updating state of a component.
+	 * Forked from fbjs/warning:
+	 * https://github.com/facebook/fbjs/blob/e66ba20ad5be433eb54423f2b097d829324d9de6/packages/fbjs/src/__forks__/warning.js
+	 *
+	 * Only change is we use console.warn instead of console.error,
+	 * and do nothing when 'console' is not supported.
+	 * This really simplifies the code.
+	 * ---
+	 * Similar to invariant but only logs a warning if the condition is not met.
+	 * This can be used to log issues in development environments in critical
+	 * paths. Removing the logging code for production environments will keep the
+	 * same logic and follow the same code paths.
 	 */
-	function ReactComponent(props, context, updater) {
-	  this.props = props;
-	  this.context = context;
-	  this.refs = emptyObject;
-	  // We initialize the default updater but the real one gets injected by the
-	  // renderer.
-	  this.updater = updater || ReactNoopUpdateQueue;
-	}
 
-	ReactComponent.prototype.isReactComponent = {};
+	var lowPriorityWarning = function () {};
 
-	/**
-	 * Sets a subset of the state. Always use this to mutate
-	 * state. You should treat `this.state` as immutable.
-	 *
-	 * There is no guarantee that `this.state` will be immediately updated, so
-	 * accessing `this.state` after calling this method may return the old value.
-	 *
-	 * There is no guarantee that calls to `setState` will run synchronously,
-	 * as they may eventually be batched together.  You can provide an optional
-	 * callback that will be executed when the call to setState is actually
-	 * completed.
-	 *
-	 * When a function is provided to setState, it will be called at some point in
-	 * the future (not synchronously). It will be called with the up to date
-	 * component arguments (state, props, context). These values can be different
-	 * from this.* because your function may be called after receiveProps but before
-	 * shouldComponentUpdate, and this new state, props, and context will not yet be
-	 * assigned to this.
-	 *
-	 * @param {object|function} partialState Next partial state or function to
-	 *        produce next partial state to be merged with current state.
-	 * @param {?function} callback Called after state is updated.
-	 * @final
-	 * @protected
-	 */
-	ReactComponent.prototype.setState = function (partialState, callback) {
-	  !(typeof partialState === 'object' || typeof partialState === 'function' || partialState == null) ?  true ? invariant(false, 'setState(...): takes an object of state variables to update or a function which returns an object of state variables.') : _prodInvariant('85') : void 0;
-	  this.updater.enqueueSetState(this, partialState);
-	  if (callback) {
-	    this.updater.enqueueCallback(this, callback, 'setState');
-	  }
-	};
-
-	/**
-	 * Forces an update. This should only be invoked when it is known with
-	 * certainty that we are **not** in a DOM transaction.
-	 *
-	 * You may want to call this when you know that some deeper aspect of the
-	 * component's state has changed but `setState` was not called.
-	 *
-	 * This will not invoke `shouldComponentUpdate`, but it will invoke
-	 * `componentWillUpdate` and `componentDidUpdate`.
-	 *
-	 * @param {?function} callback Called after update is complete.
-	 * @final
-	 * @protected
-	 */
-	ReactComponent.prototype.forceUpdate = function (callback) {
-	  this.updater.enqueueForceUpdate(this);
-	  if (callback) {
-	    this.updater.enqueueCallback(this, callback, 'forceUpdate');
-	  }
-	};
-
-	/**
-	 * Deprecated APIs. These APIs used to exist on classic React classes but since
-	 * we would like to deprecate them, we're not going to move them over to this
-	 * modern base class. Instead, we define a getter that warns if it's accessed.
-	 */
 	if (true) {
-	  var deprecatedAPIs = {
-	    isMounted: ['isMounted', 'Instead, make sure to clean up subscriptions and pending requests in ' + 'componentWillUnmount to prevent memory leaks.'],
-	    replaceState: ['replaceState', 'Refactor your code to use setState instead (see ' + 'https://github.com/facebook/react/issues/3236).']
+	  var printWarning = function (format) {
+	    for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+	      args[_key - 1] = arguments[_key];
+	    }
+
+	    var argIndex = 0;
+	    var message = 'Warning: ' + format.replace(/%s/g, function () {
+	      return args[argIndex++];
+	    });
+	    if (typeof console !== 'undefined') {
+	      console.warn(message);
+	    }
+	    try {
+	      // --- Welcome to debugging React ---
+	      // This error was thrown as a convenience so that you can use this stack
+	      // to find the callsite that caused this warning to fire.
+	      throw new Error(message);
+	    } catch (x) {}
 	  };
-	  var defineDeprecationWarning = function (methodName, info) {
-	    if (canDefineProperty) {
-	      Object.defineProperty(ReactComponent.prototype, methodName, {
-	        get: function () {
-	           true ? warning(false, '%s(...) is deprecated in plain JavaScript React classes. %s', info[0], info[1]) : void 0;
-	          return undefined;
-	        }
-	      });
+
+	  lowPriorityWarning = function (condition, format) {
+	    if (format === undefined) {
+	      throw new Error('`warning(condition, format, ...args)` requires a warning ' + 'message argument');
+	    }
+	    if (!condition) {
+	      for (var _len2 = arguments.length, args = Array(_len2 > 2 ? _len2 - 2 : 0), _key2 = 2; _key2 < _len2; _key2++) {
+	        args[_key2 - 2] = arguments[_key2];
+	      }
+
+	      printWarning.apply(undefined, [format].concat(args));
 	    }
 	  };
-	  for (var fnName in deprecatedAPIs) {
-	    if (deprecatedAPIs.hasOwnProperty(fnName)) {
-	      defineDeprecationWarning(fnName, deprecatedAPIs[fnName]);
-	    }
-	  }
 	}
 
-	module.exports = ReactComponent;
+	module.exports = lowPriorityWarning;
 
-/***/ },
-/* 186 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2015-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 */
-
-	'use strict';
-
-	var warning = __webpack_require__(4);
-
-	function warnNoop(publicInstance, callerName) {
-	  if (true) {
-	    var constructor = publicInstance.constructor;
-	     true ? warning(false, '%s(...): Can only update a mounted or mounting component. ' + 'This usually means you called %s() on an unmounted component. ' + 'This is a no-op. Please check the code for the %s component.', callerName, callerName, constructor && (constructor.displayName || constructor.name) || 'ReactClass') : void 0;
-	  }
-	}
-
-	/**
-	 * This is the abstract API for an update queue.
-	 */
-	var ReactNoopUpdateQueue = {
-
-	  /**
-	   * Checks whether or not this composite component is mounted.
-	   * @param {ReactClass} publicInstance The instance we want to test.
-	   * @return {boolean} True if mounted, false otherwise.
-	   * @protected
-	   * @final
-	   */
-	  isMounted: function (publicInstance) {
-	    return false;
-	  },
-
-	  /**
-	   * Enqueue a callback that will be executed after all the pending updates
-	   * have processed.
-	   *
-	   * @param {ReactClass} publicInstance The instance to use as `this` context.
-	   * @param {?function} callback Called after state is updated.
-	   * @internal
-	   */
-	  enqueueCallback: function (publicInstance, callback) {},
-
-	  /**
-	   * Forces an update. This should only be invoked when it is known with
-	   * certainty that we are **not** in a DOM transaction.
-	   *
-	   * You may want to call this when you know that some deeper aspect of the
-	   * component's state has changed but `setState` was not called.
-	   *
-	   * This will not invoke `shouldComponentUpdate`, but it will invoke
-	   * `componentWillUpdate` and `componentDidUpdate`.
-	   *
-	   * @param {ReactClass} publicInstance The instance that should rerender.
-	   * @internal
-	   */
-	  enqueueForceUpdate: function (publicInstance) {
-	    warnNoop(publicInstance, 'forceUpdate');
-	  },
-
-	  /**
-	   * Replaces all of the state. Always use this or `setState` to mutate state.
-	   * You should treat `this.state` as immutable.
-	   *
-	   * There is no guarantee that `this.state` will be immediately updated, so
-	   * accessing `this.state` after calling this method may return the old value.
-	   *
-	   * @param {ReactClass} publicInstance The instance that should rerender.
-	   * @param {object} completeState Next state.
-	   * @internal
-	   */
-	  enqueueReplaceState: function (publicInstance, completeState) {
-	    warnNoop(publicInstance, 'replaceState');
-	  },
-
-	  /**
-	   * Sets a subset of the state. This only exists because _pendingState is
-	   * internal. This provides a merging strategy that is not available to deep
-	   * properties which is confusing. TODO: Expose pendingState or don't use it
-	   * during the merge.
-	   *
-	   * @param {ReactClass} publicInstance The instance that should rerender.
-	   * @param {object} partialState Next partial state to be merged with state.
-	   * @internal
-	   */
-	  enqueueSetState: function (publicInstance, partialState) {
-	    warnNoop(publicInstance, 'setState');
-	  }
-	};
-
-	module.exports = ReactNoopUpdateQueue;
-
-/***/ },
-/* 187 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * 
-	 */
-
-	'use strict';
-
-	var ReactPropTypeLocationNames = {};
-
-	if (true) {
-	  ReactPropTypeLocationNames = {
-	    prop: 'prop',
-	    context: 'context',
-	    childContext: 'child context'
-	  };
-	}
-
-	module.exports = ReactPropTypeLocationNames;
-
-/***/ },
-/* 188 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * 
-	 */
-
-	'use strict';
-
-	var canDefineProperty = false;
-	if (true) {
-	  try {
-	    // $FlowFixMe https://github.com/facebook/flow/issues/285
-	    Object.defineProperty({}, 'x', { get: function () {} });
-	    canDefineProperty = true;
-	  } catch (x) {
-	    // IE will fail on defineProperty
-	  }
-	}
-
-	module.exports = canDefineProperty;
-
-/***/ },
-/* 189 */
-/***/ function(module, exports) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * 
-	 */
-
-	'use strict';
-
-	/* global Symbol */
-
-	var ITERATOR_SYMBOL = typeof Symbol === 'function' && Symbol.iterator;
-	var FAUX_ITERATOR_SYMBOL = '@@iterator'; // Before Symbol spec.
-
-	/**
-	 * Returns the iterator method function contained on the iterable object.
-	 *
-	 * Be sure to invoke the function with the iterable as context:
-	 *
-	 *     var iteratorFn = getIteratorFn(myIterable);
-	 *     if (iteratorFn) {
-	 *       var iterator = iteratorFn.call(myIterable);
-	 *       ...
-	 *     }
-	 *
-	 * @param {?object} maybeIterable
-	 * @return {?function}
-	 */
-	function getIteratorFn(maybeIterable) {
-	  var iteratorFn = maybeIterable && (ITERATOR_SYMBOL && maybeIterable[ITERATOR_SYMBOL] || maybeIterable[FAUX_ITERATOR_SYMBOL]);
-	  if (typeof iteratorFn === 'function') {
-	    return iteratorFn;
-	  }
-	}
-
-	module.exports = getIteratorFn;
-
-/***/ },
-/* 190 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 194 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -40553,7 +41289,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	__webpack_require__(418);
+	__webpack_require__(394);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -40589,15 +41325,15 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 191 */
-/***/ function(module, exports) {
+/***/ }),
+/* 195 */
+/***/ (function(module, exports) {
 
 	// removed by extract-text-webpack-plugin
 
-/***/ },
-/* 192 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 196 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -40683,9 +41419,9 @@ module.exports =
 
 	module.exports = EventListener;
 
-/***/ },
-/* 193 */
-/***/ function(module, exports) {
+/***/ }),
+/* 197 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -40714,9 +41450,9 @@ module.exports =
 
 	module.exports = focusNode;
 
-/***/ },
-/* 194 */
-/***/ function(module, exports) {
+/***/ }),
+/* 198 */
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -40739,23 +41475,27 @@ module.exports =
 	 *
 	 * The activeElement will be null only if the document or document body is not
 	 * yet defined.
+	 *
+	 * @param {?DOMDocument} doc Defaults to current document.
+	 * @return {?DOMElement}
 	 */
-	function getActiveElement() /*?DOMElement*/{
-	  if (typeof document === 'undefined') {
+	function getActiveElement(doc) /*?DOMElement*/{
+	  doc = doc || (typeof document !== 'undefined' ? document : undefined);
+	  if (typeof doc === 'undefined') {
 	    return null;
 	  }
 	  try {
-	    return document.activeElement || document.body;
+	    return doc.activeElement || doc.body;
 	  } catch (e) {
-	    return document.body;
+	    return doc.body;
 	  }
 	}
 
 	module.exports = getActiveElement;
 
-/***/ },
-/* 195 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 199 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/*eslint-disable no-empty */
 	'use strict';
@@ -40831,9 +41571,9 @@ module.exports =
 	  return null;
 	}
 
-/***/ },
-/* 196 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 200 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -40851,13 +41591,13 @@ module.exports =
 
 	var _PathUtils = __webpack_require__(21);
 
-	var _ExecutionEnvironment = __webpack_require__(33);
+	var _ExecutionEnvironment = __webpack_require__(32);
 
 	var _DOMUtils = __webpack_require__(42);
 
-	var _DOMStateStorage = __webpack_require__(195);
+	var _DOMStateStorage = __webpack_require__(199);
 
-	var _createDOMHistory = __webpack_require__(197);
+	var _createDOMHistory = __webpack_require__(201);
 
 	var _createDOMHistory2 = _interopRequireDefault(_createDOMHistory);
 
@@ -41016,9 +41756,9 @@ module.exports =
 	exports['default'] = createBrowserHistory;
 	module.exports = exports['default'];
 
-/***/ },
-/* 197 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 201 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -41032,11 +41772,11 @@ module.exports =
 
 	var _invariant2 = _interopRequireDefault(_invariant);
 
-	var _ExecutionEnvironment = __webpack_require__(33);
+	var _ExecutionEnvironment = __webpack_require__(32);
 
 	var _DOMUtils = __webpack_require__(42);
 
-	var _createHistory = __webpack_require__(198);
+	var _createHistory = __webpack_require__(202);
 
 	var _createHistory2 = _interopRequireDefault(_createHistory);
 
@@ -41061,9 +41801,9 @@ module.exports =
 	exports['default'] = createDOMHistory;
 	module.exports = exports['default'];
 
-/***/ },
-/* 198 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 202 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -41077,21 +41817,21 @@ module.exports =
 
 	var _warning2 = _interopRequireDefault(_warning);
 
-	var _deepEqual = __webpack_require__(412);
+	var _deepEqual = __webpack_require__(388);
 
 	var _deepEqual2 = _interopRequireDefault(_deepEqual);
 
 	var _PathUtils = __webpack_require__(21);
 
-	var _AsyncUtils = __webpack_require__(457);
+	var _AsyncUtils = __webpack_require__(433);
 
 	var _Actions = __webpack_require__(20);
 
-	var _createLocation2 = __webpack_require__(199);
+	var _createLocation2 = __webpack_require__(203);
 
 	var _createLocation3 = _interopRequireDefault(_createLocation2);
 
-	var _runTransitionHook = __webpack_require__(162);
+	var _runTransitionHook = __webpack_require__(170);
 
 	var _runTransitionHook2 = _interopRequireDefault(_runTransitionHook);
 
@@ -41354,9 +42094,9 @@ module.exports =
 	exports['default'] = createHistory;
 	module.exports = exports['default'];
 
-/***/ },
-/* 199 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 203 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -41410,9 +42150,9 @@ module.exports =
 	exports['default'] = createLocation;
 	module.exports = exports['default'];
 
-/***/ },
-/* 200 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 204 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -41434,7 +42174,7 @@ module.exports =
 
 	var _Actions = __webpack_require__(20);
 
-	var _createHistory = __webpack_require__(198);
+	var _createHistory = __webpack_require__(202);
 
 	var _createHistory2 = _interopRequireDefault(_createHistory);
 
@@ -41569,9 +42309,9 @@ module.exports =
 	exports['default'] = createMemoryHistory;
 	module.exports = exports['default'];
 
-/***/ },
-/* 201 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 205 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -41585,7 +42325,7 @@ module.exports =
 
 	var _warning2 = _interopRequireDefault(_warning);
 
-	var _ExecutionEnvironment = __webpack_require__(33);
+	var _ExecutionEnvironment = __webpack_require__(32);
 
 	var _DOMUtils = __webpack_require__(42);
 
@@ -41685,18 +42425,18 @@ module.exports =
 	exports['default'] = useBeforeUnload;
 	module.exports = exports['default'];
 
-/***/ },
-/* 202 */
-/***/ function(module, exports) {
+/***/ }),
+/* 206 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Analyze Tool",
 		"__content": "\n\nAnalyze content should go here.\n\n"
 	};
 
-/***/ },
-/* 203 */
-/***/ function(module, exports) {
+/***/ }),
+/* 207 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Command Line Interface (CLI)",
@@ -41707,9 +42447,9 @@ module.exports =
 		"__content": "\n\nwebpack provides a Command Line Interface (CLI) to configure and interact with your build. This is mostly useful in case of early prototyping, profiling, writing npm scripts or personal customization of the build.\n\nFor proper usage and easy distribution of this configuration, webpack can be configured with `webpack.config.js`. Any parameters sent to the CLI will map to a corresponding parameter in the config file.\n\n## Installation\n\nHave a look at [this page](/get-started/install-webpack)\n\n?> The new CLI for webpack is under development. New features are being added such as the `--init` flag. [Check it out!](https://github.com/webpack/webpack-cli)\n\n### Common Usage\n\n```bash\nwebpack <entry> [<entry>] <output>\n```\n\n| Parameter | Configuration Mapping         | Explanation                                                                                                                                                             |\n|-----------|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| entry     | entry                         | A filename or a set of named filenames which act as the entry point to build your project. If you pass a pair in the form of `=` you can create an additional entry point. |\n| output    | output.path + output.filename | A path and filename for the bundled file to be saved in. |\n\n#### Examples\n\nIf your project structure is as follows -\n\n```bash\n.\n├── dist\n├── index.html\n└── src\n    ├── index.js\n    ├── index2.js\n    └── others.js\n```\n\n```bash\nwebpack src/index.js dist/bundle.js\n\tThis will bundle your source code with entry as `index.js` and the output bundle file will have a path of `dist` and the filename will be `bundle.js`\n\n\t| Asset     | Size    | Chunks      | Chunk Names |\n\t|-----------|---------|-------------|-------------|\n\t| bundle.js | 1.54 kB | 0 [emitted] | index       |\n\t[0] ./src/index.js 51 bytes {0} [built]\n\t[1] ./src/others.js 29 bytes {0} [built]\n```\n\n```bash\nwebpack index=./src/index.js entry2=./src/index2.js dist/bundle.js\n\tThis will form the bundle with both the files as separate entry points.\n\n\t| Asset     | Size    | Chunks        | Chunk Names   |\n\t|-----------|---------|---------------|---------------|\n\t| bundle.js | 1.55 kB | 0,1 [emitted] | index, entry2 |\n\t[0] ./src/index.js 51 bytes {0} [built]\n\t[0] ./src/index2.js 54 bytes {1} [built]\n\t[1] ./src/others.js 29 bytes {0} {1} [built]\n```\n\n### Common Options\n\n**List all of the options available on the cli**\n\n```bash\nwebpack --help , webpack -h\n```\n\n**Build source using a config file**\n\nSpecifies a different configuration file to pick up. Use this if you want to specify something different than `webpack.config.js`, which is the default.\n\n```bash\nwebpack --config example.config.js\n```\n\n**Send environment variable to be used in webpack config file**\n\n```bash\nwebpack --env=DEVELOPMENT\n```\n\n**Print result of webpack as a JSON**\n\nIn every other case, webpack prints out a set of stats showing bundle, chunk and timing details. Using this option the output can be a JSON object.This response is accepted by webpack's [analyse tool](https://webpack.github.com/analyse).\nThe analyse tool will take in the JSON and provide all the details of the build in graphical form.\n\n?> (TODO: Link to webpack analyse article)\n\n```bash\nwebpack --json , webpack -j, webpack -j > stats.json\n```\n\n### Output Options\n\nThis set of options allows you to manipulate certain output parameters of your build.\n\n| Parameter                    | Explanation                                                     | Input type | Default value                                         |\n|------------------------------|-----------------------------------------------------------------|------------|-------------------------------------------------------|\n| --output-chunk-filename      | The output filename for additional chunks                       | string     | filename with [id] instead of [name] or [id] prefixed |\n| --output-filename            | The output filename of the bundle                               | string     | [name].js                                             |\n| --output-jsonp-function      | The name of the JSONP function used for chunk loading           | string     | webpackJsonp                                          |\n| --output-library             | Expose the exports of the entry point as library                | string     |                                                       |\n| --output-library-target      | The type for exposing the exports of the entry,point as library | string     | var                                                   |\n| --output-path                | The output path for compilation assets                          | string     | Current directory                                     |\n| --output-pathinfo            | Include a comment with the request for every dependency         | boolean    | false                                                 |\n| --output-public-path         | The public path for the assets                                  | string     | /                                                     |\n| --output-source-map-filename | The output filename for the SourceMap                           | string     | [name].map or [outputFilename].map                    |\n\n#### Example Usage\n\n```bash\nwebpack index=./src/index.js index2=./src/index2.js --output-path='./dist' --output-filename='[name][hash].bundle.js'\n\n| Asset                                | Size    | Chunks      | Chunk Names   |\n|--------------------------------------|---------|-------------|---------------|\n| index2740fdca26e9348bedbec.bundle.js |  2.6 kB | 0 [emitted] | index2        |\n| index740fdca26e9348bedbec.bundle.js  | 2.59 kB | 1 [emitted] | index         |\n\t[0] ./src/others.js 29 bytes {0} {1} [built]\n\t[1] ./src/index.js 51 bytes {1} [built]\n\t[2] ./src/index2.js 54 bytes {0} [built]\n```\n\n```bash\nwebpack.js index=./src/index.js index2=./src/index2.js --output-path='./dist' --output-filename='[name][hash].bundle.js' --devtool source-map --output-source-map-filename='[name]123.map'\n\n| Asset                                | Size    | Chunks      | Chunk Names   |\n|--------------------------------------|---------|-------------|---------------|\n| index2740fdca26e9348bedbec.bundle.js | 2.76 kB | 0 [emitted] | index2        |\n|  index740fdca26e9348bedbec.bundle.js | 2.74 kB | 1 [emitted] | index         |\n|                        index2123.map | 2.95 kB | 0 [emitted] | index2        |\n|                         index123.map | 2.95 kB | 1 [emitted] | index         |\n\t[0] ./src/others.js 29 bytes {0} {1} [built]\n\t[1] ./src/index.js 51 bytes {1} [built]\n\t[2] ./src/index2.js 54 bytes {0} [built]\n```\n\n### Debug Options\n\nThis set of options allows you to better debug the application containing assets compiled with webpack\n\n| Parameter  | Explanation                                      | Input type | Default value |\n|------------|--------------------------------------------------|------------|---------------|\n| --debug    | Switch loaders to debug mode                     | boolean    | false         |\n| --devtool  | Define source map type for the bundled resources | string     | -             |\n| --progress | Print compilation progress in percentage         | boolean    | false         |\n\n### Module Options\n\nThese options allow you to bind modules as allowed by webpack\n\n| Parameter          | Explanation                        | Usage                       |\n|--------------------|------------------------------------|-----------------------------|\n| --module-bind      | Bind an extension to a loader      | --module-bind /\\.js$/=babel |\n| --module-bind-post | Bind an extension to a post loader |                             |\n| --module-bind-pre  | Bind an extension to a pre loader  |                             |\n\n### Watch Options\n\nThese options makes the build watch for changes in files of the dependency graph and perform the build again.\n\n| Parameter                 | Explanation                                             |\n|---------------------------|---------------------------------------------------------|\n| --watch, -w               | Watch the filesystem for changes                        |\n| --save, -s                | Recompiles on save regardless of changes                |\n| --watch-aggregate-timeout | Timeout for gathering changes while watching            |\n| --watch-poll              | The polling interval for watching (also enable polling) |\n| --watch-stdin, --stdin    | Exit the process when stdin is closed                   |\n\n### Optimize Options\n\nThese options allow you to manipulate optimisations for a production build using webpack\n\n| Parameter                 | Explanation                                            | Plugin used                          |\n|---------------------------|--------------------------------------------------------|--------------------------------------|\n| --optimize-max-chunks     | Try to keep the chunk count below a limit              | LimitChunkCountPlugin                |\n| --optimize-min-chunk-size | Try to keep the chunk size above a limit               | MinChunkSizePlugin                   |\n| --optimize-minimize       | Minimize javascript and switches loaders to minimizing | UglifyJsPlugin & LoaderOptionsPlugin |\n\n### Resolve Options\n\nThese allow you to configure the webpack resolver with aliases and extensions.\n\n| Parameter              | Explanation                                             | Example                                     |\n|------------------------|---------------------------------------------------------|---------------------------------------------|\n| --resolve-alias        | Setup a module alias for resolving                      | --resolve-alias jquery-plugin=jquery.plugin |\n| --resolve-extensions   | Setup extensions that should be used to resolve,modules | --resolve-extensions .es6 .js .ts           |\n| --resolve-loader-alias | Minimize javascript and switches loaders to minimizing  |                                             |\n\n### Stats Options\n\nThese options allow webpack to display various stats and style them differently in the console output.\n\n| Parameter               | Explanation                                                        | Type    |\n|-------------------------|--------------------------------------------------------------------|---------|\n| --color, --colors       | Enables/Disables colors on the console [default: (supports-color)] | boolean |\n| --display-cached        | Display also cached modules in the output                          | boolean |\n| --display-cached-assets | Display also cached assets in the output                           | boolean |\n| --display-chunks        | Display chunks in the output                                       | boolean |\n| --display-entrypoints   | Display entry points in the output                                 | boolean |\n| --display-error-details | Display details about errors                                       | boolean |\n| --display-exclude       | Exclude modules in the output                                      | boolean |\n| --display-modules       | Display even excluded modules in the output                        | boolean |\n| --display-origins       | Display origins of chunks in the output                            | boolean |\n| --display-reasons       | Display reasons about module inclusion in the output               | boolean |\n| --display-used-exports  | Display information about used exports in modules (Tree Shaking)   | boolean |\n| --hide-modules          | Hides info about modules                                           | boolean |\n| --sort-assets-by        | Sorts the assets list by property in asset                         | string  |\n| --sort-chunks-by        | Sorts the chunks list by property in chunk                         | string  |\n| --sort-modules-by       | Sorts the modules list by property in module                       | string  |\n| --verbose, -v           | Show more details                                                  | boolean |\n\n### Advanced Options\n\n| Parameter             | Explanation                                                      | Usage                                       |\n|-----------------------|------------------------------------------------------------------|---------------------------------------------|\n| --bail                | Abort the compilation on first error                             |                                             |\n| --cache               | Enable in memory caching [Enabled by default for watch]          | --cache=false                               |\n| --define              | Define any free var in the bundle                                | --define process.env.NODE_ENV='development' |\n| --hot                 | Enables Hot Module Replacement [Uses HotModuleReplacementPlugin] | --hot=true                                  |\n| --labeled-modules     | Enables labeled modules [Uses LabeledModulesPlugin]              |                                             |\n| --plugin              | Load this plugin                                                 |                                             |\n| --prefetch            | Prefetch the particular file                                     | --prefetch=./files.js                       |\n| --provide             | Provide these modules as free vars in all modules                | --provide jQuery=jquery                     |\n| --records-input-path  | Path to the records file (reading)                               |                                             |\n| --records-output-path | Path to the records file (writing)                               |                                             |\n| --records-path        | Path to the records file                                         |                                             |\n| --target              | The targeted execution environment                                | --target='node'                             |\n\n### Shortcuts\n\n| Shortcut | Replaces                                                         |\n|----------|------------------------------------------------------------------|\n| -d       | --debug --devtool eval-cheap-module-source-map --output-pathinfo |\n| -p       | --optimize-minimize --define process.env.NODE_ENV=\"production\"   |\n\n### Profiling\n\nThis option profiles the compilation and includes this information in the stats output. It gives you an in depth idea of which step in the compilation is taking how long. This can help you optimise your build in a more informed manner.\n\n```bash\nwebpack --profile\n\n30ms building modules\n1ms sealing\n1ms optimizing\n0ms basic module optimization\n1ms module optimization\n1ms advanced module optimization\n0ms basic chunk optimization\n0ms chunk optimization\n1ms advanced chunk optimization\n0ms module and chunk tree optimization\n1ms module reviving\n0ms module order optimization\n1ms module id optimization\n1ms chunk reviving\n0ms chunk order optimization\n1ms chunk id optimization\n10ms hashing\n0ms module assets processing\n13ms chunk assets processing\n1ms additional chunk assets processing\n0ms recording\n0ms additional asset processing\n26ms chunk asset optimization\n1ms asset optimization\n6ms emitting\n```\n"
 	};
 
-/***/ },
-/* 204 */
-/***/ function(module, exports) {
+/***/ }),
+/* 208 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "API",
@@ -41717,9 +42457,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 205 */
-/***/ function(module, exports) {
+/***/ }),
+/* 209 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Loader API",
@@ -41730,9 +42470,9 @@ module.exports =
 		"__content": "\n\nLoaders allow you to preprocess files as you `require()` or “load” them. Loaders are kind of like “tasks” in other build tools, \nand provide a powerful way to handle front-end build steps. Loaders can transform files from a different language (like CoffeeScript to JavaScript), or inline images as data URLs. Loaders even allow you to do things like `require()` css files right in your JavaScript!\n\nTo tell webpack to transform a module with a loader, you can specify the loader in the webpack [configuration](/configuration) file (preferred) or in the module request, such as in a `require()` call.\n\n?> When /concepts/loaders merges, we should link to the many usages of loaders found there (require vs configuration) from this page.\n\n## How to write a loader\n\nA loader is just a JavaScript module that exports a function. The compiler calls this function and passes the result of the previous loader or the resource file into it. The `this` context of the function is filled-in by the compiler with some useful methods that allow the loader (among other things) to change its invocation style to async, or get query parameters. The first loader is passed one argument: the content of the resource file. The compiler expects a result from the last loader. The result should be a `String` or a `Buffer` (which is converted to a string), representing the JavaScript source code of the module. An optional SourceMap result (as JSON object) may also be passed.\n\nA single result can be returned in **sync mode**. For multiple results the `this.callback()` must be called. In **async mode** `this.async()` must be called. It returns `this.callback()` if **async mode** is allowed. Then the loader must return `undefined` and call the callback.\n\n## Examples\n\n### Sync Loader\n\n**sync-loader.js**\n\n```javascript\nmodule.exports = function(content) {\n    return someSyncOperation(content);\n};\n```\n\n### Async Loader \n\n**async-loader.js**\n\n```javascript\nmodule.exports = function(content) {\n    var callback = this.async();\n    if(!callback) return someSyncOperation(content);\n    someAsyncOperation(content, function(err, result) {\n        if(err) return callback(err);\n        callback(null, result);\n    });\n};\n```\n\nT> It’s recommended to give an asynchronous loader a fall-back to synchronous mode. This isn’t required for webpack, but allows the loader to run  synchronously using [enhanced-require](https://github.com/webpack/enhanced-resolve).\n\n### \"Raw\" Loader\n\nBy default, the resource file is treated as utf-8 string and passed as String to the loader. By setting raw to true the loader is passed the raw `Buffer`. Every loader is allowed to deliver its result as `String` or as `Buffer`. The compiler converts them between loaders.\n\n**raw-loader.js**\n\n```javascript\nmodule.exports = function(content) {\n\tassert(content instanceof Buffer);\n\treturn someSyncOperation(content);\n\t// return value can be a `Buffer` too\n\t// This is also allowed if loader is not \"raw\"\n};\nmodule.exports.raw = true;\n``` \n\n### Pitching Loader\n\nThe order of chained loaders are **always** called from right to left. But, in some cases, loaders do not care about the results of the previous loader or the resource. They only care for **metadata**. The `pitch` method on the loaders is called from **left to right** before the loaders are called (from right to left). \n\nIf a loader delivers a result in the `pitch` method the process turns around and skips the remaining loaders, continuing with the calls to the more left loaders. `data` can be passed between pitch and normal call.\n\n```javascript\nmodule.exports = function(content) {\n\treturn someSyncOperation(content, this.data.value);\n};\nmodule.exports.pitch = function(remainingRequest, precedingRequest, data) {\n\tif(someCondition()) {\n\t\t// fast exit\n\t\treturn \"module.exports = require(\" + JSON.stringify(\"-!\" + remainingRequest) + \");\";\n\t}\n\tdata.value = 42;\n};\n```\n\n## The loader context \n\nThe loader context represents the properties that are available inside of a loader assigned to the `this` property. \n\nGiven the following example this require call is used:\nIn `/abc/file.js`:\n\n```javascript\nrequire(\"./loader1?xyz!loader2!./resource?rrr\");\n```\n\n### `version` \n\n**Loader API version.** Currently `2`. This is useful for providing backwards compatibility. Using the version you can specify custom logic or fallbacks for breaking changes.  \n\n### `context`\n\n**The directory of the module.** Can be used as context for resolving other stuff.\n\nIn the example: `/abc` because `resource.js` is in this directory\n\n### `request`\n\nThe resolved request string.\n\nIn the example: `\"/abc/loader1.js?xyz!/abc/node_modules/loader2/index.js!/abc/resource.js?rrr\"`\n\n### `query`\n\nA string. The query of the request for the current loader.\n\nIn the example: in loader1: `\"?xyz\"`, in loader2: `\"\"`\n\n### `data`\n\nA data object shared between the pitch and the normal phase.\n\n### `cacheable`\n\n```typescript\ncacheable(flag = true: boolean)\n```\n\nBy default, loader results are cacheable. Call this method passing `false` to make the loader's result not cacheable.\n\nA cacheable loader must have a deterministic result, when inputs and dependencies haven't changed. This means the loader shouldn't have other dependencies than specified with `this.addDependency`. Most loaders are deterministic and cacheable.\n\n### `loaders`\n\n```typescript\nloaders = [{request: string, path: string, query: string, module: function}]\n```\n\nAn array of all the loaders. It is writeable in the pitch phase.\n\nIn the example:\n\n```javascript\n[\n  { request: \"/abc/loader1.js?xyz\",\n\tpath: \"/abc/loader1.js\",\n\tquery: \"?xyz\",\n\tmodule: [Function]\n  },\n  { request: \"/abc/node_modules/loader2/index.js\",\n\tpath: \"/abc/node_modules/loader2/index.js\",\n\tquery: \"\",\n\tmodule: [Function]\n  }\n]\n```\n\n### `loaderIndex`\n\nThe index in the loaders array of the current loader.\n\nIn the example: in loader1: `0`, in loader2: `1`\n\n### `resource`\n\nThe resource part of the request, including query.\n\nIn the example: `\"/abc/resource.js?rrr\"`\n\n### `resourcePath`\n\nThe resource file.\n\nIn the example: `\"/abc/resource.js\"`\n\n### `resourceQuery`\n\nThe query of the resource.\n\nIn the example: `\"?rrr\"`\n\n### `emitWarning`\n\n```typescript\nemitWarning(message: string)\n```\n\nEmit a warning.\n\n### `emitError`\n\n```typescript\nemitError(message: string)\n```\n\nEmit an error.\n\n### `exec`\n\n```typescript\nexec(code: string, filename: string)\n```\n\nExecute some code fragment like a module.\n\nT> Don't use `require(this.resourcePath)`, use this function to make loaders chainable!\n\n### `resolve`\n\n```typescript\nresolve(context: string, request: string, callback: function(err, result: string))\n```\n\nResolve a request like a require expression.\n\n### `resolveSync`\n\n```typescript\nresolveSync(context: string, request: string) -> string\n```\n\nResolve a request like a require expression.\n\n### `addDependency`\n\n```typescript\naddDependency(file: string)\ndependency(file: string) // shortcut\n```\n\nAdds a file as dependency of the loader result in order to make them watchable. For example, [html-loader](https://github.com/webpack/html-loader) uses this technique as it finds `src` and `src-set` attributes. Then, it sets the url's for those attributes as dependencies of the html file that is parsed.  \n\n### `addContextDependency`\n\n```typescript\naddContextDependency(directory: string)\n```\n\nAdd a directory as dependency of the loader result.\n\n### `clearDependencies`\n\n```typescript\nclearDependencies()\n```\n\nRemove all dependencies of the loader result. Even initial dependencies and these of other loaders. Consider using `pitch`.\n\n### `value`\n\nPass values to the next loader. If you know what your result exports if executed as module, set this value here (as a only element array).\n\n### `inputValue`\n\nPassed from the last loader. If you would execute the input argument as module, consider reading this variable for a shortcut (for performance).\n\n### `options`\n\nThe options passed to the Compiler.\n\n### `debug`\n\nA boolean flag. It is set when in debug mode.\n\n### `minimize`\n\nShould the result be minimized.\n\n### `sourceMap`\n\nShould a SourceMap be generated.\n\n### `target`\n\nTarget of compilation. Passed from configuration options.\n\nExample values: `\"web\"`, `\"node\"`\n\n### `webpack`\n\nThis boolean is set to true when this is compiled by webpack.\n\nT> Loaders were originally designed to also work as Babel transforms. Therefore if you write a loader that works for both, you can use this property to know if there is access to additional loaderContext and webpack features. \n\n### `emitFile`\n\n```typescript\nemitFile(name: string, content: Buffer|String, sourceMap: {...})\n```\n\nEmit a file. This is webpack-specific.\n\n### `fs`\n\nAccess to the `compilation`'s `inputFileSystem` property.\n\n### `_compilation`\n\nHacky access to the Compilation object of webpack.\n\n### `_compiler`\n\nHacky access to the Compiler object of webpack.\n\n### `_module`\n\nHacky access to the Module object being loaded.\n\n### Custom `loaderContext` Properties\n\nCustom properties can be added to the `loaderContext` by either specifying values on the `loader` proprty on your webpack [configuration](/configuration), or by creating a [custom plugin](/api/plugins) that hooks into the `normal-module-loader` event which gives you access to the `loaderContext` to modify or extend. \n"
 	};
 
-/***/ },
-/* 206 */
-/***/ function(module, exports) {
+/***/ }),
+/* 210 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Node.js API",
@@ -41744,9 +42484,9 @@ module.exports =
 		"__content": "\n\nwebpack provides a Node.js API which can be used directly in Node.js runtime.\n\nThe Node.js API is useful in scenarios in which you need to customize the build or development process since all the reporting and error handling must be done manually and webpack only does the compiling part. For this reason the [`stats`](/configuration/stats) configuration options will not have any effect in the `webpack()` call.\n\n## Installation\n\nTo start using webpack Node.js API, first install webpack if you haven’t yet:\n\n```\nnpm install webpack --save-dev\n```\n\nThen require the webpack module in your Node.js script:\n\n``` js\nconst webpack = require(\"webpack\");\n\n// Or if you prefer ES2015:\nimport webpack from \"webpack\";\n```\n\n## `webpack()`\n\nThe imported `webpack` function is fed a webpack [Configuration Object](/configuration/) and runs the webpack compiler if a callback function is provided:\n\n``` js-with-links\nconst webpack = require(\"webpack\");\n\nwebpack({\n  // [Configuration Object](/configuration/)\n}, (err, [stats](#stats-object)) => {\n  if (err || stats.hasErrors()) {\n    // [Handle errors here](#error-handling)\n  }\n  // Done processing\n});\n```\n\nT> The `err` object **will not** include compilation errors and those must be handled separately using `stats.hasErrors()` which will be covered in detail in [Error Handling](#error-handling) section of this guide. The `err` object will only contain webpack-related issues, such as misconfiguration, etc.\n\n**Note** that you can provide the `webpack` function with an array of configurations:\n\n``` js-with-links\nwebpack([\n  { /* Configuration Object */ },\n  { /* Configuration Object */ },\n  { /* Configuration Object */ }\n], (err, [stats](#stats-object)) => {\n  // ...\n});\n```\nT> webpack will **not** run the multiple configurations in parallel. Each configuration is only processed after the previous one has finished processing. To have webpack process them in parallel, you can use a third-party solution like [parallel-webpack](https://www.npmjs.com/package/parallel-webpack). \n\n## Compiler Instance\n\nIf you don’t pass the `webpack` runner function a callback, it will return a webpack `Compiler` instance. This instance can be used to manually trigger the webpack runner or have it build and watch for changes. Much like the [CLI](/api/cli/) Api. The `Compiler` instance provides the following methods:\n\n* `.run(callback)`\n* `.watch(watchOptions, handler)`\n\n## Run\n\nCalling the `run` method on the `Compiler` instance is much like the quick run method mentioned above:\n\n``` js-with-links\nconst webpack = require(\"webpack\");\n\nconst compiler = webpack({\n  // [Configuration Object](/configuration/)\n});\n\ncompiler.run((err, [stats](#stats-object)) => {\n  // ...\n});\n```\n\n## Watching\n\nCalling the `watch` method, triggers the webpack runner, but then watches for changes (much like CLI: `webpack --watch`), as soon as webpack detects a change, runs again. Returns an instance of `Watching`.\n\n``` js-with-links\nwatch(watchOptions, callback)\n```\n\n``` js-with-links-with-details\nconst webpack = require(\"webpack\");\n\nconst compiler = webpack({\n  // [Configuration Object](/configuration/)\n});\n\nconst watching = compiler.watch({\n  <details><summary>/* [watchOptions](/configuration/watch/#watchoptions) */</summary>\n  aggregateTimeout: 300,\n  poll: undefined\n  </details>\n}, (err, [stats](#stats-object)) => {\n  // Print watch/build result here...\n  console.log(stats);\n});\n```\n\n`Watching` options are [covered in detail here](/configuration/watch/#watchoptions).\n\n### Close `Watching`\n\nThe `watch` method returns a `Watching` instance that exposes `.close(callback)` method. Calling this method will end watching:\n\n``` js\nwatching.close(() => {\n  console.log(\"Watching Ended.\");\n});\n```\n\nT> It’s not allowed to watch or run again before the existing watcher has been closed or invalidated.\n\n### Invalidate `Watching`\n\nManually invalidate the current compiling round, but don’t stop watching.\n\n``` js\nwatching.invalidate(() => {\n  console.warn(\"Invalidated.\");\n});\n```\n\n## Stats Object\n\nThe `stats` object that is passed as a second argument of the [`webpack()`](#webpack-) callback, is a good source of information about the code compilation process. It includes:\n\n- Errors and Warnings (if any)\n- Timings\n- Module and Chunk information\n- etc.\n\nThe [webpack CLI](/api/cli) uses this information to display a nicely formatted output in your console.\n\nThis object exposes these methods:\n\n### `stats.hasErrors()`\n\nCan be used to check if there were errors while compiling. Returns `true` or `false`.\n\n### `stats.hasWarnings()`\n\nCan be used to check if there were warnings while compiling. Returns `true` or `false`.\n\n### `stats.toJson(options)`\n\nReturns compilation information as a JSON object. `options` can be either a string (a preset) or an object for more granular control:\n\n``` js-with-links\nstats.toJson(\"minimal\"); // [more options: \"verbose\", etc](/configuration/stats).\n```\n``` js\nstats.toJson({\n  assets: false,\n  hash: true\n});\n```\n\nAll available options and presets are described in [Stats documentation](/configuration/stats)\n\n> Here’s [an example of this function’s output](https://github.com/webpack/analyse/blob/master/app/pages/upload/example.json)\n\n### `stats.toString(options)`\n\nReturns a formatted string of the compilation information (similar to [CLI](/api/cli) output).\n\nOptions are the same as [`stats.toJson(options)`](/api/node#stats-tojson-options-) with one addition:\n\n``` js\nstats.toString({\n  // ...\n  // Add console colors\n  colors: true\n});\n```\n\nHere’s an example of `stats.toString()` usage:\n\n``` js-with-links\nconst webpack = require(\"webpack\");\n\nwebpack({\n  // [Configuration Object](/configuration/)\n}, (err, stats) => {\n  if (err) {\n    console.error(err);\n    return;\n  }\n\n  console.log(stats.toString({\n    chunks: false,  // Makes the build much quieter\n    colors: true    // Shows colors in the console\n  }));\n});\n```\n\n## Error Handling\n\nFor a good error handling, you need to account for these three types of errors:\n\n- Fatal webpack errors (wrong configuration, etc)\n- Compilation errors (missing modules, syntax errors, etc)\n- Compilation warnings\n\nHere’s an example that does all that:\n\n``` js-with-links\nconst webpack = require(\"webpack\");\n\nwebpack({\n  // [Configuration Object](/configuration/)\n}, (err, stats) => {\n  if (err) {\n    console.error(err.stack || err);\n    if (err.details) {\n      console.error(err.details);\n    }\n    return;\n  }\n\n  const info = stats.toJson();\n\n  if (stats.hasErrors()) {\n    console.error(info.errors);\n  }\n\n  if (stats.hasWarnings()) {\n    console.warn(info.warnings)\n  }\n\n  // Log result...\n});\n```\n\n## Compiling to Memory\n\nwebpack writes the output to the specified files on disk. If you want webpack to output them to a different kind of file system (memory, webDAV, etc), you can set the `outputFileSystem` option on the compiler:\n\n``` js\nconst MemoryFS = require(\"memory-fs\");\nconst webpack = require(\"webpack\");\n\nconst fs = new MemoryFS();\nconst compiler = webpack({ /* options*/ });\n\ncompiler.outputFileSystem = fs;\ncompiler.run((err, stats) => {\n  // Read the output later:\n  const content = fs.readFileSync(\"...\");\n});\n```\n\nT> The output file system you provide needs to be compatible with Node’s own [`fs`](https://nodejs.org/api/fs.html) module interface. \n"
 	};
 
-/***/ },
-/* 207 */
-/***/ function(module, exports) {
+/***/ }),
+/* 211 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Plugin API",
@@ -41754,9 +42494,9 @@ module.exports =
 		"__content": "\n\nFor a high-level introduction to writing plugins, start with [How to write a plugin](/development/how-to-write-a-plugin).\n\nMany objects in webpack extend the Tapable class, which exposes a `plugin` method. And with the `plugin` method, plugins can inject custom build steps. You will see `compiler.plugin` and `compilation.plugin` used a lot. Essentially, each one of these plugin calls binds a callback to fire at specific steps throughout the build process.\n\nA plugin is installed once as webpack starts up. webpack installs a plugin by calling its `apply` method, and passes a reference to the webpack `compiler` object. You may then call `compiler.plugin` to access asset compilations and their individual build steps. An example would look like this:\n\n```javascript\n// MyPlugin.js\n\nfunction MyPlugin(options) {\n  // Configure your plugin with options...\n}\n\nMyPlugin.prototype.apply = function(compiler) {\n  compiler.plugin(\"compile\", function(params) {\n    console.log(\"The compiler is starting to compile...\");\n  });\n\n  compiler.plugin(\"compilation\", function(compilation) {\n    console.log(\"The compiler is starting a new compilation...\");\n\n    compilation.plugin(\"optimize\", function() {\n      console.log(\"The compilation is starting to optimize files...\");\n    });\n  });\n\n  compiler.plugin(\"emit\", function(compilation, callback) {\n    console.log(\"The compilation is going to emit files...\");\n    callback();\n  });\n};\n\nmodule.exports = MyPlugin;\n```\n\nThen in `webpack.config.js`\n\n```javascript\n    plugins: [\n        new MyPlugin({options: 'nada'})\n    ]\n```\n\n## Plugin Interfaces\n\nThere are two types of plugin interfaces.\n\n* Timing based\n  * sync (default): As seen above. Use return.\n  * async: Last parameter is a callback. Signature: function(err, result)\n  * parallel: The handlers are invoked parallel (async).\n\n* Return value\n  * not bailing (default): No return value.\n  * bailing: The handlers are invoked in order until one handler returns something.\n  * parallel bailing: The handlers are invoked in parallel (async). The first returned value (by order) is significant.\n  * waterfall: Each handler gets the result value of the last handler as an argument.\n\n## The `Compiler` instance\n\nPlugins need to have the apply method on their prototype chain (or bound to) in order to have access to the compiler instance.\n\n**MyPlugin.js**\n\n```javascript\nfunction MyPlugin() {};\nMyPlugin.prototype.apply = function (compiler) {\n    //now you have access to all the compiler instance methods\n}\nmodule.exports = MyPlugin;\n```\n\nSomething like this should also work\n\n**MyFunction.js**\n\n```javascript\nfunction apply(options, compiler) {\n    //now you have access to the compiler instance\n    //and options\n}\n\n//this little trick makes it easier to pass and check options to the plugin\nmodule.exports = function(options) {\n    if (options instanceof Array) {\n        options = {\n            include: options\n        };\n    }\n\n    if (!Array.isArray(options.include)) {\n        options.include = [ options.include ];\n    }\n\n    return {\n        apply: apply.bind(this, options)\n    };\n};\n\n```\n\n### `run(compiler: Compiler)` async\n\nThe `run` method of the Compiler is used to start a compilation. This is not called in watch mode.\n\n### `watch-run(watching: Watching)` async\n\nThe `watch` method of the Compiler is used to start a watching compilation. This is not called in normal mode.\n\n### `compilation(c: Compilation, params: Object)`\n\nA `Compilation` is created. A plugin can use this to obtain a reference to the `Compilation` object. The `params` object contains useful references.\n\n### `normal-module-factory(nmf: NormalModuleFactory)`\n\nA `NormalModuleFactory` is created. A plugin can use this to obtain a reference to the `NormalModuleFactory` object.\n\n```javascript\ncompiler.plugin(\"normal-module-factory\", function(nmf) {\n    nmf.plugin(\"after-resolve\", function(data) {\n        data.loaders.unshift(path.join(__dirname, \"postloader.js\"));\n    });\n});\n```\n\n### `context-module-factory(cmf: ContextModuleFactory)`\n\nA `ContextModuleFactory` is created. A plugin can use this to obtain a reference to the `ContextModuleFactory` object.\n\n### `compile(params)`\n\nThe Compiler starts compiling. This is used in normal and watch mode. Plugins can use this point to modify the `params` object (i. e. to decorate the factories).\n\n```javascript\ncompiler.plugin(\"compile\", function(params) {\n    //you are now in the \"compile\" phase\n});\n```\n\n### `make(c: Compilation)` parallel\n\nPlugins can use this point to add entries to the compilation or prefetch modules. They can do this by calling `addEntry(context, entry, name, callback)` or `prefetch(context, dependency, callback)` on the Compilation.\n\n### `after-compile(c: Compilation)` async\n\nThe compile process is finished and the modules are sealed. The next step is to emit the generated stuff. Here modules can use the results in some cool ways.\n\nThe handlers are not copied to child compilers.\n\n### `emit(c: Compilation)` async\n\nThe Compiler begins with emitting the generated assets. Here plugins have the last chance to add assets to the `c.assets` array.\n\n### `after-emit(c: Compilation)` async\n\nThe Compiler has emitted all assets.\n\n### `done(stats: Stats)`\n\nAll is done.\n\n### `failed(err: Error)`\n\nThe Compiler is in watch mode and a compilation has failed hard.\n\n### `invalid()`\n\nThe Compiler is in watch mode and a file change is detected. The compilation will be begin shortly (`options.watchDelay`).\n\n### `after-plugins()`\n\nAll plugins extracted from the options object are added to the compiler.\n\n### `after-resolvers()`\n\nAll plugins extracted from the options object are added to the resolvers.\n\n## The `Compilation` instance\n\nThe Compilation instance extends from the compiler. I.e. compiler.compilation  It is the literal compilation of all the objects in the require graph. This object has access to all the modules and their dependencies (most of which are circular references). In the compilation phase, modules are loaded, sealed, optimized, chunked, hashed and restored, etc. This would be the main lifecycle of any operations of the compilation.\n\n```javascript\ncompiler.plugin(\"compilation\", function(compilation) {\n    //the main compilation instance\n    //all subsequent methods are derived from compilation.plugin\n});\n```\n\n### `normal-module-loader`\n\nThe normal module loader, is the function that actually loads all the modules in the module graph (one-by-one).\n\n```javascript\ncompilation.plugin('normal-module-loader', function(loaderContext, module) {\n    //this is where all the modules are loaded\n    //one by one, no dependencies are created yet\n});\n```\n\n### `seal`\n\nThe sealing of the compilation has started.\n\n```javascript\ncompilation.plugin('seal', function() {\n    //you are not accepting any more modules\n    //no arguments\n});\n```\n\n### `optimize`\n\nOptimize the compilation.\n\n```javascript\ncompilation.plugin('optimize', function() {\n    //webpack is begining the optimization phase\n    // no arguments\n});\n```\n\n### `optimize-tree(chunks, modules)` async\n\nAsync optimization of the tree.\n\n```javascript\ncompilation.plugin('optimize-tree', function(chunks, modules) {\n\n});\n```\n\n### `optimize-modules(modules: Module[])`\n\nOptimize the modules.\n\n```javascript\ncompilation.plugin('optimize-modules', function(modules) {\n    //handle to the modules array during tree optimization\n});\n```\n\n### `after-optimize-modules(modules: Module[])`\n\nOptimizing the modules has finished.\n\n### `optimize-chunks(chunks: Chunk[])`\n\nOptimize the chunks.\n\n```javascript\n//optimize chunks may be run several times in a compilation\n\ncompilation.plugin('optimize-chunks', function(chunks) {\n    //unless you specified multiple entries in your config\n    //there's only one chunk at this point\n    chunks.forEach(function (chunk) {\n        //chunks have circular references to their modules\n        chunk.modules.forEach(function (module){\n            //module.loaders, module.rawRequest, module.dependencies, etc.\n        });\n    });\n});\n```\n\n### `after-optimize-chunks(chunks: Chunk[])`\n\nOptimizing the chunks has finished.\n\n### `revive-modules(modules: Module[], records)`\n\nRestore module info from records.\n\n### `optimize-module-order(modules: Module[])`\n\nSort the modules in order of importance. The first is the most important module. It will get the smallest id.\n\n### `optimize-module-ids(modules: Module[])`\n\nOptimize the module ids.\n\n### `after-optimize-module-ids(modules: Module[])`\n\nOptimizing the module ids has finished.\n\n### `record-modules(modules: Module[], records)`\n\nStore module info to the records.\n\n### `revive-chunks(chunks: Chunk[], records)`\n\nRestore chunk info from records.\n\n### `optimize-chunk-order(chunks: Chunk[])`\n\nSort the chunks in order of importance. The first is the most important chunk. It will get the smallest id.\n\n### `optimize-chunk-ids(chunks: Chunk[])`\n\nOptimize the chunk ids.\n\n### `after-optimize-chunk-ids(chunks: Chunk[])`\n\nOptimizing the chunk ids has finished.\n\n### `record-chunks(chunks: Chunk[], records)`\n\nStore chunk info to the records.\n\n### `before-hash`\n\nBefore the compilation is hashed.\n\n### `after-hash`\n\nAfter the compilation is hashed.\n\n### `before-chunk-assets`\n\nBefore creating the chunk assets.\n\n### `additional-chunk-assets(chunks: Chunk[])`\n\nCreate additional assets for the chunks.\n\n### `record(compilation, records)`\n\nStore info about the compilation to the records\n\n### `optimize-chunk-assets(chunks: Chunk[])` async\n\nOptimize the assets for the chunks.\n\nThe assets are stored in `this.assets`, but not all of them are chunk assets. A `Chunk` has a property `files` which points to all files created by this chunk. The additional chunk assets are stored in `this.additionalChunkAssets`.\n\nHere's an example that simply adds a banner to each chunk.\n\n```javascript\ncompilation.plugin(\"optimize-chunk-assets\", function(chunks, callback) {\n    chunks.forEach(function(chunk) {\n        chunk.files.forEach(function(file) {\n            compilation.assets[file] = new ConcatSource(\"\\/**Sweet Banner**\\/\", \"\\n\", compilation.assets[file]);\n        });\n    });\n    callback();\n});\n```\n\n### `after-optimize-chunk-assets(chunks: Chunk[])`\n\nThe chunk assets have been optimized. Here's an example plugin from [@boopathi](https://github.com/boopathi) that outputs exactly what went into each chunk.\n\n```javascript\nvar PrintChunksPlugin = function() {};\nPrintChunksPlugin.prototype.apply = function(compiler) {\n    compiler.plugin('compilation', function(compilation, params) {\n        compilation.plugin('after-optimize-chunk-assets', function(chunks) {\n            console.log(chunks.map(function(c) {\n                return {\n                    id: c.id,\n                    name: c.name,\n                    includes: c.modules.map(function(m) {\n                        return m.request;\n                    })\n                };\n            }));\n        });\n    });\n};\n```\n\n### `optimize-assets(assets: Object{name: Source})` async\n\nOptimize all assets.\n\nThe assets are stored in `this.assets`.\n\n### `after-optimize-assets(assets: Object{name: Source})`\n\nThe assets has been optimized.\n\n### `build-module(module)`\n\nBefore a module build has started.\n\n```javascript\ncompilation.plugin('build-module', function(module){\n    console.log('build module');\n    console.log(module);\n});\n```\n\n### `succeed-module(module)`\n\nA module has been built successfully.\n\n```javascript\ncompilation.plugin('succeed-module', function(module){\n    console.log('succeed module');\n    console.log(module);\n});\n```\n\n### `failed-module(module)`\n\nThe module build has failed.\n\n```javascript\ncompilation.plugin('failed-module', function(module){\n    console.log('failed module');\n    console.log(module);\n});\n```\n\n### `module-asset(module, filename)`\n\nAn asset from a module was added to the compilation.\n\n### `chunk-asset(chunk, filename)`\n\nAn asset from a chunk was added to the compilation.\n\n## The `MainTemplate` instance\n\n### `startup(source, module, hash)`\n```javascript\n    compilation.mainTemplate.plugin('startup', function(source, module, hash) {\n      if (!module.chunks.length && source.indexOf('__ReactStyle__') === -1) {\n        var originName = module.origins && module.origins.length ? module.origins[0].name : 'main';\n        return ['if (typeof window !== \"undefined\") {',\n            '  window.__ReactStyle__ = ' + JSON.stringify(classNames[originName]) + ';',\n            '}'\n          ].join('\\n') + source;\n      }\n      return source;\n    });\n```\n\n## The `Parser` instance (`compiler.parser`)\n\nThe parser instance takes a String and callback and will return an expression when there's a match.\n\n```javascript\ncompiler.parser.plugin(\"var rewire\", function (expr) {\n    //if you original module has 'var rewire'\n    //you now have a handle on the expresssion object\n    return true;\n});\n```\n\n### `program(ast)` bailing\n\nGeneral purpose plugin interface for the AST of a code fragment.\n\n### `statement(statement: Statement)` bailing\n\nGeneral purpose plugin interface for the statements of the code fragment.\n\n### `call <identifier>(expr: Expression)` bailing\n\n`abc(1)` => `call abc`\n\n`a.b.c(1)` => `call a.b.c`\n\n### `expression <identifier>(expr: Expression)` bailing\n\n`abc` => `expression abc`\n\n`a.b.c` => `expression a.b.c`\n\n### `expression ?:(expr: Expression)` bailing\n\n`(abc ? 1 : 2)` => `expression ?!`\n\nReturn a boolean value to omit parsing of the wrong path.\n\n### `typeof <identifier>(expr: Expression)` bailing\n\n`typeof a.b.c` => `typeof a.b.c`\n\n### `statement if(statement: Statement)` bailing\n\n`if(abc) {}` => `statement if`\n\nReturn a boolean value to omit parsing of the wrong path.\n\n### `label <labelname>(statement: Statement)` bailing\n\n`xyz: abc` => `label xyz`\n\n### `var <name>(statement: Statement)` bailing\n\n`var abc, def` => `var abc` + `var def`\n\nReturn `false` to not add the variable to the known definitions.\n\n### `evaluate <expression type>(expr: Expression)` bailing\n\nEvaluate an expression.\n\n### `evaluate typeof <identifier>(expr: Expression)` bailing\n\nEvaluate the type of an identifier.\n\n### `evaluate Identifier <identifier>(expr: Expression)` bailing\n\nEvaluate a identifier that is a free var.\n\n### `evaluate defined Identifier <identifier>(expr: Expression)` bailing\n\nEvaluate a identifier that is a defined var.\n\n### `evaluate CallExpression .<property>(expr: Expression)` bailing\n\nEvaluate a call to a member function of a successfully evaluated expression.\n\n# The `NormalModuleFactory`\n\n### `before-resolve(data)` async waterfall\n\nBefore the factory starts resolving. The `data` object has these properties:\n\n* `context` The absolute path of the directory for resolving.\n* `request` The request of the expression.\n\nPlugins are allowed to modify the object or to pass a new similar object to the callback.\n\n### `after-resolve(data)` async waterfall\n\nAfter the factory has resolved the request. The `data` object has these properties:\n\n* `request` The resolved request. It acts as an identifier for the NormalModule.\n* `userRequest` The request the user entered. It's resolved, but does not contain pre or post loaders.\n* `rawRequest` The unresolved request.\n* `loaders` A array of resolved loaders. This is passed to the NormalModule and they will be executed.\n* `resource` The resource. It will be loaded by the NormalModule.\n* `parser` The parser that will be used by the NormalModule.\n\n# The `ContextModuleFactory`\n\n### `before-resolve(data)` async waterfall\n\n### `after-resolve(data)` async waterfall\n\n### `alternatives(options: Array)` async waterfall\n\n## Resolvers\n\n* `compiler.resolvers.normal` Resolver for a normal module\n* `compiler.resolvers.context` Resolver for a context module\n* `compiler.resolvers.loader` Resolver for a loader\n\nAny plugin should use `this.fileSystem` as fileSystem, as it's cached. It only has async named functions, but they may behave sync, if the user uses a sync file system implementation (i. e. in enhanced-require).\n\nTo join paths any plugin should use `this.join`. It normalizes the paths. There is a `this.normalize` too.\n\nA bailing async forEach implementation is available on `this.forEachBail(array, iterator, callback)`.\n\nTo pass the request to other resolving plugins, use the `this.doResolve(types: String|String[], request: Request, callback)` method. `types` are multiple possible request types that are tested in order of preference.\n\n```javascript\ninterface Request {\n  path: String // The current directory of the request\n  request: String // The current request string\n  query: String // The query string of the request, if any\n  module: boolean // The request begins with a module\n  directory: boolean // The request points to a directory\n  file: boolean // The request points to a file\n  resolved: boolean // The request is resolved/done\n  // undefined means false for boolean fields\n}\n\n// Examples\n// from /home/user/project/file.js: require(\"../test?charset=ascii\")\n{\n  path: \"/home/user/project\",\n  request: \"../test\",\n  query: \"?charset=ascii\"\n}\n// from /home/user/project/file.js: require(\"test/test/\")\n{\n  path: \"/home/user/project\",\n  request: \"test/test/\",\n  module: true,\n  directory: true\n}\n```\n\n### `resolve(context: String, request: String)`\n\nBefore the resolving process starts.\n\n### `resolve-step(types: String[], request: Request)`\n\nBefore a single step in the resolving process starts.\n\n### `module(request: Request)` async waterfall\n\nA module request is found and should be resolved.\n\n### `directory(request: Request)` async waterfall\n\nA directory request is found and should be resolved.\n\n### `file(request: Request)` async waterfall\n\nA file request is found and should be resolved.\n\n### The plugins may offer more extensions points\n\nHere is a list what the default plugins in webpack offer. They are all `(request: Request)` async waterfall.\n\nThe process for normal modules and contexts is `module -> module-module -> directory -> file`.\n\nThe process for loaders is `module -> module-loader-module -> module-module -> directory -> file`.\n\n### `module-module`\n\nA module should be looked up in a specified directory. `path` contains the directory.\n\n### `module-loader-module` (only for loaders)\n\nUsed before module templates are applied to the module name. The process continues with `module-module`.\n"
 	};
 
-/***/ },
-/* 208 */
-/***/ function(module, exports) {
+/***/ }),
+/* 212 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Branding Guidelines",
@@ -41768,9 +42508,9 @@ module.exports =
 		"__content": "\n\nHere you can find **webpack** project brand guidelines, assets, and license. See our official [media repository](https://github.com/webpack/media) for more information and to find the [license](https://github.com/webpack/media/blob/master/LICENSE) that governs this work. Click any of the images to download them.\n\n## [Jump to All Original Media Files](https://github.com/webpack/media)\n\n## The webpack Name\n\nwebpack should **always** be written in lower-case letters, even at the beginning of a sentence.\n\n## Logo\n\nThe webpack logo should be placed on a white background with enough space around it like this:\n\n<img src=\"https://github.com/webpack/media/blob/master/logo/logo-on-white-bg.png?raw=true\" alt=\"webpack logo default with proper spacing on light background\" />\n\n[svg](https://github.com/webpack/media/blob/master/logo/logo-on-white-bg.svg) | [png](https://github.com/webpack/media/blob/master/logo/logo-on-white-bg.png) | [jpg](https://github.com/webpack/media/blob/master/logo/logo-on-white-bg.jpg)\n\nJust double the size of the inner dark blue cube to get an idea how much space the logo should have.\n\nFor dark backgrounds, you can use the negative version of the logo:\n\n<div style=\"display: block; background: #111;\">\n  <img src=\"https://github.com/webpack/media/blob/master/logo/logo-on-dark-bg.png?raw=true\" alt=\"webpack logo default with proper spacing on light background\" />\n</div>\n\n[svg](https://github.com/webpack/media/blob/master/logo/logo-on-dark-bg.svg) | [png](https://github.com/webpack/media/blob/master/logo/logo-on-dark-bg.png) | [jpg](https://github.com/webpack/media/blob/master/logo/logo-on-dark-bg.jpg)\n\nT> Please use the **icon + text** whenever possible.\n\n## Icon only\n\n**The icon is designed to be used in layout-constrained areas. As previously stated, please prefer icon + text.**\n\n<img src=\"https://github.com/webpack/media/blob/master/logo/icon.png?raw=true\" width=\"250\" alt=\"icon example\">\n\n[svg](https://github.com/webpack/media/blob/master/logo/icon.svg) | [png](https://github.com/webpack/media/blob/master/logo/icon.png) | [jpg](https://github.com/webpack/media/blob/master/logo/icon.jpg)\n\nSquare-sized icon for bigger areas (like avatars or profile pictures):\n\n<img src=\"https://github.com/webpack/media/blob/master/logo/icon-square-big.png?raw=true\" width=\"250\" alt=\"icon square big example\">\n\n[svg](https://github.com/webpack/media/blob/master/logo/icon-square-big.svg) | [png](https://github.com/webpack/media/blob/master/logo/icon-square-big.png) | [jpg](https://github.com/webpack/media/blob/master/logo/icon-square-big.jpg)\n\nSquare-sized icon for smaller areas (like favicons):\n\n<img src=\"https://github.com/webpack/media/blob/master/logo/icon-square-small.png?raw=true\" width=\"50\" alt=\"icon square small example\">\n\n[svg](https://github.com/webpack/media/blob/master/logo/icon-square-small.svg) | [png](https://github.com/webpack/media/blob/master/logo/icon-square-small.png) | [jpg](https://github.com/webpack/media/blob/master/logo/icon-square-small.jpg)\n\nT> For those of you following our guidelines and have gotten this far, we've made a special smaller size image used especially for custom emoji (like in a slack or gitter channel ;))\n\n<img src=\"/assets/icon-square-small-slack.png\" width=\"50\" alt=\"icon square small example\">\n\n## Font\n\nWe use the beautiful [Geomanist Medium](http://geomanist.com/) font from the extremely talented folks at the [Atipo Foundry](http://atipofoundry.com/) who provide the entire font family at a 'pay what you want' model.\n\n## Color Palette\n\nThe following colors are used throughout the site in various combinations and on our fancy clothing line launched with the help of [Open Collective](http://opencollective.com) and [Threadless](https://medium.com/u/840563ee2a56) over at the [official webpack store](https://webpack.threadless.com/collections/the-final-release-collection/)!\n\n| Color Name | HEX Code | RGB Code | Sample |\n|--- |--- |--- |---\n| Malibu: | HEX `#8dd6f9` | `rgb: 141, 214, 249` <td style=\"background-color: #8dd6f9; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Denim: | HEX `#1d78c1` | `rgb: 29, 120, 193` <td style=\"background-color: #1d78c1; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Fiord: | HEX `#465E69` | `rgb: 70, 94, 105` <td style=\"background-color: #465E69; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Outer Space: | HEX `#2B3A42` | `rgb: 43, 58, 66` <td style=\"background-color: #2B3A42; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Emperor: | HEX `#535353` | `rgb: 83, 83, 83` <td style=\"background-color: #535353; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Mine Shaft: | HEX `#333333` | `rgb: 51, 51, 51` <td style=\"background-color: #333333; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Alto: | HEX `#dedede` | `rgb: 222, 222, 222` <td style=\"background-color: #dedede; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Dusty Gray: | HEX `#999999` | `rgb: 153, 153, 153` <td style=\"background-color: #999999; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Dove Gray: | HEX `#666666` | `rgb: 102, 102, 102` <td style=\"background-color: #666666; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| White: | HEX `#ffffff` | `rgb: 255, 255, 255` <td style=\"background-color: #ffffff; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n| Concrete: | HEX `#f2f2f2` | `rgb: 242, 242, 242` <td style=\"background-color: #f2f2f2; height: 25px; width: 250px; margin: 0; padding: 0;\"></td>\n\nIn addition, you can grab the following file types directly from these links:\n\n[psd](https://raw.githubusercontent.com/webpack/media/master/design/webpack-palette.psd) | [png](https://raw.githubusercontent.com/webpack/media/master/design/webpack-palette.png)\n | [ai](https://raw.githubusercontent.com/webpack/media/master/design/webpack-palette.ai) | [svg](https://raw.githubusercontent.com/webpack/media/master/design/webpack-palette.svg)\n\n## License\n\nThe logo and the brand name are **not MIT licensed**. Please check [our LICENSE](https://github.com/webpack/media/blob/master/LICENSE) for usage guidelines.\n"
 	};
 
-/***/ },
-/* 209 */
-/***/ function(module, exports) {
+/***/ }),
+/* 213 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Configuration",
@@ -41781,9 +42521,9 @@ module.exports =
 		"__content": "\n\nYou may have noticed that few webpack configurations look exactly alike. This is because **webpack's configuration file is a JavaScript file that exports an object.** This object is then processed by webpack based upon its defined properties.\n\nBecause it's a standard Node.js CommonJS module, you **can do the following**:\n\n* import other files via `require(...)`\n* use utilities on npm via `require(...)`\n* use JavaScript control flow expressions i. e. the `?:` operator\n* use constants or variables for often used values\n* write and execute functions to generate a part of the configuration\n\nUse these features when appropriate.\n\n**You should NOT use the following things**. Technically you could use them, but it's **not recommended**:\n\n* Access CLI arguments, when using the webpack CLI (instead write your own CLI, or use `--env`)\n* Export non-deterministic values (calling webpack twice should result in the same output files)\n* Write long configurations (instead split the configuration into multiple files)\n\nThe following examples below describe how webpack's configuration object can be both expressive and configurable because _it is code_:\n\n## The Simplest Configuration\n\n**webpack.config.js**\n\n```javascript\nvar path = require('path');\n\nmodule.exports = {\n  entry: './foo.js',\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'foo.bundle.js'\n  }\n};\n```\n\n## Multiple Targets\n\n**webpack.config.js**\n\n```javascript\nvar path = require('path');\nvar webpack = require('webpack');\nvar webpackMerge = require('webpack-merge');\n\nvar baseConfig = {\n  target: 'async-node',\n  entry: {\n    entry: './entry.js'\n  },\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: '[name].js'\n  },\n  plugins: [\n    new webpack.optimize.CommonsChunkPlugin({\n      name: 'inline',\n      filename: 'inline.js',\n      minChunks: Infinity\n    }),\n    new webpack.optimize.AggressiveSplittingPlugin({\n        minSize: 5000,\n        maxSize: 10000\n    }),\n  ]\n};\n\nlet targets = ['web', 'webworker', 'node', 'async-node', 'node-webkit', 'electron-main'].map((target) => {\n  let base = webpackMerge(baseConfig, {\n    target: target,\n    output: {\n      path: path.resolve(__dirname, 'dist/' + target),\n      filename: '[name].' + target + '.js'\n    }\n  });\n  return base;\n});\n\nmodule.exports = targets;\n```\n\nT> The most important part to take away from this document is that there are many different ways to format and style your webpack configuration. The key is to stick with something consistent that you and your team can understand and maintain.\n\n## Using TypeScript\n\nIn the example below we use TypeScript to create a class which the angular-cli uses to [generate configs](https://github.com/angular/angular-cli/).\n\n**webpack.config.ts**\n\n```typescript\nimport * as webpackMerge from 'webpack-merge';\nimport { CliConfig } from './config';\nimport {\n  getWebpackCommonConfig,\n  getWebpackDevConfigPartial,\n  getWebpackProdConfigPartial,\n  getWebpackMobileConfigPartial,\n  getWebpackMobileProdConfigPartial\n} from './';\n\nexport class NgCliWebpackConfig {\n  // TODO: When webpack2 types are finished let's replace all these any types\n  // so this is more maintainable in the future for devs\n  public config: any;\n  private webpackDevConfigPartial: any;\n  private webpackProdConfigPartial: any;\n  private webpackBaseConfig: any;\n  private webpackMobileConfigPartial: any;\n  private webpackMobileProdConfigPartial: any;\n\n  constructor(public ngCliProject: any, public target: string, public environment: string, outputDir?: string) {\n    const config: CliConfig = CliConfig.fromProject();\n    const appConfig = config.config.apps[0];\n\n    appConfig.outDir = outputDir || appConfig.outDir;\n\n    this.webpackBaseConfig = getWebpackCommonConfig(this.ngCliProject.root, environment, appConfig);\n    this.webpackDevConfigPartial = getWebpackDevConfigPartial(this.ngCliProject.root, appConfig);\n    this.webpackProdConfigPartial = getWebpackProdConfigPartial(this.ngCliProject.root, appConfig);\n\n    if (appConfig.mobile){\n      this.webpackMobileConfigPartial = getWebpackMobileConfigPartial(this.ngCliProject.root, appConfig);\n      this.webpackMobileProdConfigPartial = getWebpackMobileProdConfigPartial(this.ngCliProject.root, appConfig);\n      this.webpackBaseConfig = webpackMerge(this.webpackBaseConfig, this.webpackMobileConfigPartial);\n      this.webpackProdConfigPartial = webpackMerge(this.webpackProdConfigPartial, this.webpackMobileProdConfigPartial);\n    }\n\n    this.generateConfig();\n  }\n\n  generateConfig(): void {\n    switch (this.target) {\n      case \"development\":\n        this.config = webpackMerge(this.webpackBaseConfig, this.webpackDevConfigPartial);\n        break;\n      case \"production\":\n        this.config = webpackMerge(this.webpackBaseConfig, this.webpackProdConfigPartial);\n        break;\n      default:\n        throw new Error(\"Invalid build target. Only 'development' and 'production' are available.\");\n        break;\n    }\n  }\n}\n```\n\n## Using JSX\n\nIn the example below JSX (React JavaScript Markup) and Babel are used to create a JSON Configuration that webpack can understand. (Courtesy of [Jason Miller](https://twitter.com/_developit))\n\n```javascript\nimport h from 'jsxobj';\n\n// example of an imported plugin\nconst CustomPlugin = config => ({\n  ...config,\n  name: 'custom-plugin'\n});\n\nexport default (\n  <webpack target=\"web\" watch>\n    <entry path=\"src/index.js\" />\n    <resolve>\n      <alias {...{\n        react: 'preact-compat',\n        'react-dom': 'preact-compat'\n      }} />\n    </resolve>\n    <plugins>\n      <uglify-js opts={{\n        compression: true,\n        mangle: false\n      }} />\n      <CustomPlugin foo=\"bar\" />\n    </plugins>\n  </webpack>\n);\n```\n"
 	};
 
-/***/ },
-/* 210 */
-/***/ function(module, exports) {
+/***/ }),
+/* 214 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Dependency Graph",
@@ -41794,9 +42534,9 @@ module.exports =
 		"__content": "\n\nAny time one file depends on another, webpack treats this as a _dependency_. This allows webpack to take non-code assets, such as images or web fonts, and also provide them as _dependencies_ for your application.\n\nWhen webpack processes your application, it starts from a list of modules defined on the command line or in its config file.\nStarting from these _entry points_, webpack recursively builds a _dependency graph_ that includes every module your application needs, then packages all of those modules into a small number of _bundles_ - often, just one - to be loaded by the browser.\n\nT> Bundling your application is especially powerful for *HTTP/1.1* clients, as it minimizes the number of times your app has to wait while the browser starts a new request. For *HTTP/2*, you can also use Code Splitting and bundling through webpack for the [best optimization](https://medium.com/webpack/webpack-http-2-7083ec3f3ce6#.7y5d3hz59).\n"
 	};
 
-/***/ },
-/* 211 */
-/***/ function(module, exports) {
+/***/ }),
+/* 215 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Entry Points",
@@ -41808,9 +42548,9 @@ module.exports =
 		"__content": "\n\nLike we mentioned in the [introduction](/get-started/#using-webpack-with-a-config), there are multiple ways to define the `entry` property in your webpack configuration. We will show you the ways you **can** configure the `entry` property, in addition to explaining why it may be useful to you.\n\n## Single Entry (Shorthand) Syntax\n\nUsage: `entry: string|Array<string>`\n\n**webpack.config.js**\n\n```javascript\nconst config = {\n  entry: './path/to/my/entry/file.js'\n};\n\nmodule.exports = config;\n```\n\nThe single entry syntax for the `entry` property is a shorthand for:\n\n```javascript\nconst config = {\n  entry: {\n    main: './path/to/my/entry/file.js'\n  }\n};\n```\n\nT> **What happens when you pass an array to `entry`?** Passing an array of file paths to the `entry` property creates what is known as a **\"multi-main entry\"**. This is useful when you would like to inject multiple dependent files together and graph their dependencies into one \"chunk\".\n\nThis is a great choice when you are looking to quickly setup a webpack configuration for an application or tool with one entry point (IE: a library). However, there is not much flexibility in extending or scaling your configuration with this syntax.\n\n## Object Syntax\n\nUsage: `entry: {[entryChunkName: string]: string|Array<string>}`\n\n**webpack.config.js**\n\n```javascript\nconst config = {\n  entry: {\n    app: './src/app.js',\n    vendors: './src/vendors.js'\n  }\n};\n```\n\nThe object syntax is more verbose. However, this is the most scalable way of defining entry/entries in your application.\n\nT> **\"Scalable webpack configurations\"** are ones that can be reused and combined with other partial configurations. This is a popular technique used to separate concerns by environment, build target and runtime. They are then merged using specialized tools like [webpack-merge](https://github.com/survivejs/webpack-merge).\n\n## Scenarios\n\nBelow is a list of entry configurations and their real-world use cases:\n\n#### Separate App and Vendor Entries\n\n**webpack.config.js**\n\n```javascript\nconst config = {\n  entry: {\n    app: './src/app.js',\n    vendors: './src/vendors.js'\n  }\n};\n```\n\n**What does this do?** At face value this tells webpack to create dependency graphs starting at both `app.js` and `vendors.js`. These graphs are completely separate and independent of each other (there will be a webpack bootstrap in each bundle). This is commonly seen with single page applications which have only one entry point (excluding vendors).\n\n**Why?** This setup allows you to leverage `CommonsChunkPlugin` and extract any vendor references from your app bundle into your vendor bundle, replacing them with `__webpack_require__()` calls. If there is no vendor code in your application bundle, then you can achieve a common pattern in webpack known as [long-term vendor-caching](/guides/caching).\n\n?> Consider removing this scenario in favor of the DllPlugin, which provides a better vendor-splitting.\n\n#### Multi Page Application\n\n**webpack.config.js**\n\n```javascript\nconst config = {\n  entry: {\n    pageOne: './src/pageOne/index.js',\n    pageTwo: './src/pageTwo/index.js',\n    pageThree: './src/pageThree/index.js'\n  }\n};\n```\n\n**What does this do?** We are telling webpack that we would like 3 separate dependency graphs (like the above example).\n\n**Why?** In a multi-page application, the server is going to fetch a new HTML document for you. The page reloads this new document and assets are redownloaded. However, this gives us the unique opportunity to do multiple things:\n\n- Use `CommonsChunkPlugin` to create bundles of shared application code between each page. Multi-page applications that reuse a lot of code/modules between entry points can greatly benefit from these techniques, as the amount of entry points increase.\n\nT> As a rule of thumb: for each HTML document use exactly one entry point.\n"
 	};
 
-/***/ },
-/* 212 */
-/***/ function(module, exports) {
+/***/ }),
+/* 216 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Hot Module Replacement",
@@ -41824,9 +42564,9 @@ module.exports =
 		"__content": "\n\nHot Module Replacement (HMR) exchanges, adds, or removes\n[modules](/concepts/modules/) while an application is running without a\npage reload. This allows you to speed up development time by updating\nindividual modules when they are changed without refreshing the page.\n\n## How Does It Work?\n\n### From The App View\n\n1. The app code asks the HMR runtime to check for updates.\n2. The HMR runtime downloads the updates (asynchronously) and tells the app\ncode that an update is available.\n3. The app code then asks the HMR runtime to apply the updates.\n4. The HMR runtime applies the update (synchronously).\n\nYou can set up HMR so that this process happens automatically, or you can\nchoose to require user interaction for updates to occur.\n\n### From The Compiler (webpack) View\n\nIn addition to the normal assets, the compiler needs to emit an \"update\"\nto allow updating from previous version to the new version. The \"update\"\nconsists of two parts:\n\n1. The update manifest (JSON)\n2. One or more update chunks (JavaScript)\n\nThe manifest contains the new compilation hash and a list of all update chunks.\n\nEach update chunk contains code for all updated modules in the respective chunk\n(or a flag indicating that the module was removed).\n\nThe compiler makes sure that module IDs and chunk IDs are consistent\nbetween these builds. It typically stores these IDs in memory (for example, when\nusing [webpack-dev-server](/configuration/dev-server/)), but it's also possible to\nstore them in a JSON file.\n\n### From The Module View\n\nHMR is an opt-in feature that only affects modules containing HMR code. One example\nwould be patching styling through the [style-loader](https://github.com/webpack/style-loader).\nIn order for patching to work, style-loader implements the HMR interface; when it\nreceives an update through HMR, it replaces the old styles with the new ones.\n\nSimilarly, when implementing the HMR interface in a module, you can describe what should\nhappen when the module is updated. However, in most cases, it's not mandatory to write\nHMR code in every module. If a module has no HMR handlers, the update bubbles up. This\nmeans that a single handler can handle an update to a complete module tree. If a single\nmodule in this tree is updated, the complete module tree is reloaded (only reloaded,\nnot transferred).\n\n### From The HMR Runtime View (Technical)\n\nFor the module system runtime, additional code is emitted to track module `parents` and `children`.\n\nOn the management side, the runtime supports two methods: `check` and `apply`.\n\nA `check` makes an HTTP request to the update manifest. If this request fails,\nthere is no update available. If it succeeds, the list of updated chunks is compared\nto the list of currently loaded chunks. For each loaded chunk, the corresponding\nupdate chunk is downloaded. All module updates are stored in the runtime.\nWhen all update chunks have been downloaded and are ready to be applied, the runtime\nswitches into the `ready` state.\n\nThe `apply` method flags all updated modules as invalid. For each invalid module,\nthere needs to be an update handler in the module or update handlers in its parent(s).\nOtherwise, the invalid flag bubbles up and marks its parent(s) as invalid too. Each bubble\ncontinues until the app's entry point or a module with an update handler is reached\n(whichever comes first). If it bubbles up from an entry point, the process fails.\n\nAfterwards, all invalid modules are disposed (via the dispose handler) and unloaded.\nThe current hash is then updated and all \"accept\" handlers are called. The runtime\nswitches back to the `idle` state and everything continues as normal.\n\n## What can I do with it?\n\nYou can use it in development as a LiveReload replacement.\n[webpack-dev-server](/configuration/dev-server/) supports a\nhot mode in which it tries to update with HMR before trying to reload the whole page. See how\nto implement [HMR with React](/guides/hmr-react) as an example.\n\n\nSome loaders already generate modules that are hot-updatable. For example, the `style-loader`\ncan swap out a page's stylesheets. For modules like this, you don't need to do anything special.\n\nwebpack's power lies in its customizability, and there are *many* ways of configuring HMR\ndepending on the needs of a particular project."
 	};
 
-/***/ },
-/* 213 */
-/***/ function(module, exports) {
+/***/ }),
+/* 217 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Concepts",
@@ -41840,9 +42580,9 @@ module.exports =
 		"__content": "\n\n*webpack* is a _module bundler_ for modern JavaScript applications. It is [incredibly configurable](/configuration), however, there are **Four Core Concepts** we feel you should understand before you get started!\n\nAs part of your webpack learning journey, we wrote this document aimed to give you a **high-level** overview of these concepts, while still providing links to concept specific use-cases.\n\n## Entry\n\nwebpack creates a graph of all of your application's dependencies. The starting point of this graph is known as an _entry point_. The _entry point_ tells webpack _where to start_ and follows the graph of dependencies to know _what to bundle_. You can think of your application's _entry point_ as the **contextual root** or **the first file to kick off your app**.\n\nIn webpack we define _entry points_ using the `entry` property in our [webpack configuration object](/configuration).\n\nThe simplest example is seen below:\n\n**webpack.config.js**\n\n```javascript\nmodule.exports = {\n  entry: './path/to/my/entry/file.js'\n};\n```\n\nThere are multiple ways to declare your `entry` property that are specific to your application's needs.\n\n[Learn more!](/concepts/entry-points)\n\n## Output\n\nOnce you've bundled all of your assets together, we still need to tell webpack **where** to bundle our application. The webpack `output` property describes to webpack **how to treat bundled code**.\n\n**webpack.config.js**\n\n```javascript\nvar path = require('path');\n\nmodule.exports = {\n  entry: './path/to/my/entry/file.js',\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'my-first-webpack.bundle.js'\n  }\n};\n```\n\nIn the example above, through the `output.filename` and `output.path` properties we are describing to webpack the name of our bundle, and where we want it to be emitted to.\n\nT> You may see the term **emitted** or **emit** used throughout our documentation and [plugin API](/api/plugins). This is a fancy term for \"produced or discharged\".\n\nThe `output` property has [many more configurable features](/configuration/output), but let's spend some time understanding some of the most common use cases for the `output` property.\n\n[Learn more!](/concepts/output)\n\n\n## Loaders\n\nThe goal is to have all of the assets in your project to be **webpack's** concern and not the browser's. (This doesn't mean that they all have to be bundled together). webpack treats [every file (.css, .html, .scss, .jpg, etc.) as a module](/concepts/modules). However, webpack **only understands JavaScript**.\n\n**Loaders in webpack _transform these files into modules_ as they are added to your dependency graph.**\n\nAt a high level, they have two purposes in your webpack config.\n\n1. Identify what files should be transformed by a certain loader. (`test` property)\n2. Transform that file so that it can be added to your dependency graph (and eventually your bundle). (`use` property)\n\n**webpack.config.js**\n\n```javascript\nvar path = require('path');\n\nconst config = {\n  entry: './path/to/my/entry/file.js',\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'my-first-webpack.bundle.js'\n  },\n  module: {\n    rules: [\n      {test: /\\.(js|jsx)$/, use: 'babel-loader'}\n    ]\n  }\n};\n\nmodule.exports = config;\n```\n\nIn the configuration above we have defined a `rules` property for a single module with two required properties: `test`, and `use`. This tells webpack's compiler the following:\n\n> \"Hey webpack compiler, when you come across a path that resolves to a '.js' or '.jsx' file inside of a `require()`/`import` statement, **use** the `babel-loader` to transform it before you add it to the bundle\".\n\nW> It is important to remember when defining rules in your webpack config, you are defining them under `module.rules`, and not `rules`. But webpack will yell at you when doing this incorrectly.\n\nThere are more specific properties to define on loaders that we haven't yet covered.\n\n[Learn more!](/concepts/loaders)\n\n## Plugins\n\nSince Loaders only execute transforms on a per-file basis, `plugins` are most commonly used (but not limited to) performing actions and custom functionality on \"compilations\" or \"chunks\" of your bundled modules [(and so much more)](/concepts/plugins). The webpack Plugin system is [extremely powerful and customizable](/api/plugins).\n\nIn order to use a plugin, you just need to `require()` it and add it to the `plugins` array. Most plugins are customizable via options. Since you can use a plugin multiple times in a config for different purposes, you need to create an instance of it by calling it with `new`.\n\n**webpack.config.js**\n\n```javascript\nconst HtmlWebpackPlugin = require('html-webpack-plugin'); //installed via npm\nconst webpack = require('webpack'); //to access built-in plugins\nconst path = require('path');\n\nconst config = {\n  entry: './path/to/my/entry/file.js',\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'my-first-webpack.bundle.js'\n  },\n  module: {\n    rules: [\n      {test: /\\.(js|jsx)$/, use: 'babel-loader'}\n    ]\n  },\n  plugins: [\n    new webpack.optimize.UglifyJsPlugin(),\n    new HtmlWebpackPlugin({template: './src/index.html'})\n  ]\n};\n\nmodule.exports = config;\n```\n\nThere are many plugins that webpack provides out of the box! Check out our [list of plugins](/plugins) for more information.\n\nUsing plugins in your webpack config is straight-forward, however there are many use-cases that are worth discussing further.\n\n[Learn more!](/concepts/plugins)\n"
 	};
 
-/***/ },
-/* 214 */
-/***/ function(module, exports) {
+/***/ }),
+/* 218 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Loaders",
@@ -41857,9 +42597,9 @@ module.exports =
 		"__content": "\n\nLoaders are transformations that are applied on a resource file of your application. They are functions (running in Node.js) that take the source of a resource file as the parameter and return the new source.\n\n## Example\n\nFor example, you can use loaders to tell webpack to load a CSS file or to convert TypeScript to JavaScript. Firstly, install the corresponding loaders:\n\n```\nnpm install --save-dev css-loader\nnpm install --save-dev ts-loader\n```\n\nSecondly, configure in your `webpack.config.js` that for every `.css` file the `css-loader` should be used and analogously for `.ts` files and the `ts-loader`:\n\n**webpack.config.js**\n\n```js-with-links-with-details\nmodule.exports = {\n  module: {\n    rules: [\n      {test: /\\.css$/, use: ['css-loader'](/loaders/css-loader)},\n      {test: /\\.ts$/, use: ['ts-loader'](https://github.com/TypeStrong/ts-loader)}\n    ]\n  }\n};\n```\n\nNote that according to the [configuration options](/configuration#options), the following specifications define the identical loader usage:\n\n```js-with-links-with-details\n{test: /\\.css$/, [loader](/configuration/module#rule-loader): 'css-loader'}\n// or equivalently\n{test: /\\.css$/, [use](/configuration/module#rule-use): 'css-loader'}\n// or equivalently\n{test: /\\.css$/, [use](/configuration/module#rule-use): {\n  loader: 'css-loader',\n  options: {}\n}}\n```\n\n## Loader Features\n\n* Loaders can be chained. They are applied in a pipeline to the resource. A chain of loaders are compiled chronologically. The first loader in a chain of loaders returns a value to the next. At the end loader, webpack expects JavaScript to be returned.\n* Loaders can be synchronous or asynchronous.\n* Loaders run in Node.js and can do everything that’s possible there.\n* Loaders accept query parameters. This can be used to pass configuration to the loader.\n* Loaders can also be configured with an `options` object.\n* Normal modules can export a loader in addition to the normal `main` via `package.json` with the `loader` field.\n* Plugins can give loaders more features.\n* Loaders can emit additional arbitrary files.\n\nLoaders allow more power in the JavaScript ecosystem through preprocessing\nfunctions (loaders). Users now have more flexibility to include fine-grained logic such as compression, packaging, language translations and [more](/loaders).\n\n## Resolving Loaders\n\nLoaders follow the standard [module resolution](/concepts/module-resolution/). In most cases you will be loaders from the [module path](/concepts/module-resolution/#module-paths) (think `npm install`, `node_modules`).\n\n[How to write a loader?](/development/how-to-write-a-loader) A loader module is expected to export a function and to be written in Node.js compatible JavaScript. In the common case you manage loaders with npm, but you can also have loaders as files in your app.\n\nBy convention, loaders are usually named as `XXX-loader`, where `XXX` is the context name. For example, `json-loader`.\n\nThe loader name convention and precedence search order is defined by [`resolveLoader.moduleTemplates`](/configuration/resolve#resolveloader) within the webpack configuration API.\n"
 	};
 
-/***/ },
-/* 215 */
-/***/ function(module, exports) {
+/***/ }),
+/* 219 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Module Resolution",
@@ -41871,9 +42611,9 @@ module.exports =
 		"__content": "\n\nA resolver is a library which helps in locating a module by its absolute path.\nA module can be required as a dependency from another module as:\n\n```js\nimport foo from 'path/to/module'\n// or\nrequire('path/to/module')\n```\n\nThe dependency module can be from the application code or a third party library. The resolver helps\nwebpack finds the module code that needs to be included in the bundle for every such `require`/`import` statement.\nwebpack uses [enhanced-resolve](https://github.com/webpack/enhanced-resolve) to resolve file paths while bundling modules.\n\n## Resolving rules in webpack\n\nUsing `enhanced-resolve`, webpack can resolve three kinds of file paths:\n\n### Absolute paths\n\n```js\nimport \"/home/me/file\";\n\nimport \"C:\\\\Users\\\\me\\\\file\";\n```\n\nSince we already have the absolute path to the file, no further resolution is required.\n\n### Relative paths\n\n```js\nimport \"../src/file1\";\nimport \"./file2\";\n```\n\nIn this case, the directory of the resource file where the `import` or `require` occurs is taken to be the context directory. The relative path specified in the `import/require` is joined to this context path to produce the absolute path to the module.\n\n### Module paths\n\n```js\nimport \"module\";\nimport \"module/lib/file\";\n```\n\nModules are searched for inside all directories specified in [`resolve.modules`](/configuration/resolve/#resolve-modules).\nYou can replace the original module path by an alternate path by creating an alias for it using [`resolve.alias`](/configuration/resolve/#resolve-alias) configuration option.\n\nOnce the path is resolved based on the above rule, the resolver checks to see if the path points to a file or a directory. If the path points to a file:\n* If the path has a file extension, then the file is bundled straightaway.\n* Otherwise, the file extension is resolved using the [`resolve.extensions`](/configuration/resolve/#resolve-extensions) option, which tells the resolver which extensions (eg - `.js`, `.jsx`) are acceptable for resolution.\n\nIf the path points to a folder, then the following steps are taken to find the right file with the right extension:\n* If the folder contains a `package.json` file, then fields specified in [`resolve.mainFields`](/configuration/resolve/#resolve-mainfields) configuration option are looked up in order, and the first such field in `package.json` determines the file path. \n* If there is no `package.json` or if the main fields do not return a valid path, file names specified in the [`resolve.mainFiles`](/configuration/resolve/#resolve-mainfiles) configuration option are looked for in order, to see if a matching filename exists in the imported/required directory .\n* The file extension is then resolved in a similar way using the `resolve.extensions` option.\n\nwebpack provides reasonable [defaults](/configuration/resolve) for these options depending on your build target.\n\n## Resolving Loaders\n\nThis follows the same rules as those specified for file resolution. But the [`resolveLoader`](/configuration/resolve/#resolveloader) configuration option can be used to have separate resolution rules for loaders.\n\n## Caching\n\nEvery filesystem access is cached, so that multiple parallel or serial requests to the same file occur faster. In [watch mode](/configuration/watch/#watch), only modified files are evicted from the cache. If watch mode is off, then the cache gets purged before every compilation.\n\n\nLook at [Resolve API](/configuration/resolve) to know more on the configuration options mentioned above.\n"
 	};
 
-/***/ },
-/* 216 */
-/***/ function(module, exports) {
+/***/ }),
+/* 220 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Modules",
@@ -41886,9 +42626,9 @@ module.exports =
 		"__content": "\n\nIn [modular programming](https://en.wikipedia.org/wiki/Modular_programming), developers break programs up into discrete chunks of functionality called a _module_.\n\nEach module has a smaller surface area than a full program, making verification, debugging, and testing trivial.\nWell-written _modules_ provide solid abstractions and encapsulation boundaries, so that each module has a coherent design and a clear purpose within the overall application.\n\nNode.js has supported modular programming almost since its inception.\nOn the web, however, support for _modules_ has been slow to arrive.\nMultiple tools exist that support modular JavaScript on the web, with a variety of benefits and limitations.\nwebpack builds on lessons learned from these systems and applies the concept of _modules_ to any file in your project.\n\n## What is a webpack Module\n\nIn contrast to [Node.js modules](https://nodejs.org/api/modules.html), webpack _modules_ can express their _dependencies_ in a variety of ways. A few examples are:\n\n* An [ES2015 `import`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import) statement\n* A [CommonJS](http://www.commonjs.org/specs/modules/1.0/) `require()` statement\n* An [AMD](https://github.com/amdjs/amdjs-api/blob/master/AMD.md) `define` and `require` statement\n* An [`@import` statement](https://developer.mozilla.org/en-US/docs/Web/CSS/@import) inside of a css/sass/less file.\n* An image url in a stylesheet (`url(...)`) or html (`<img src=...>`) file.\n\nT> webpack 1 requires a specific loader to convert ES2015 `import`, however this is possible out of the box via webpack 2\n\n## Supported Module Types\n\nwebpack supports modules written in a variety of languages and preprocessors, via _loaders_. _Loaders_ describe to webpack **how** to process non-JavaScript _modules_ and include these _dependencies_ into your _bundles_.\nThe webpack community has built _loaders_ for a wide variety of popular languages and language processors, including:\n\n* [CoffeeScript](http://coffeescript.org)\n* [TypeScript](https://www.typescriptlang.org)\n* [ESNext (Babel)](https://babeljs.io)\n* [Sass](http://sass-lang.com)\n* [Less](http://lesscss.org)\n* [Stylus](http://stylus-lang.com)\n\nAnd many others! Overall, webpack provides a powerful and rich API for customization that allows one to use webpack for **any stack**, while staying **non-opinionated** about your development, testing, and production workflows.\n\nFor a full list, see [**the list of loaders**](/loaders) or [**write your own**](/api/loaders).\n"
 	};
 
-/***/ },
-/* 217 */
-/***/ function(module, exports) {
+/***/ }),
+/* 221 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Output",
@@ -41901,9 +42641,9 @@ module.exports =
 		"__content": "\n\nOptions affecting the output of the compilation. `output` options tell webpack how to write the compiled files to disk. Note, that while there can be multiple `entry` points, only one `output` configuration is specified.\n\nIf you use any hashing (`[hash]` or `[chunkhash]`), make sure to have a consistent ordering of modules. Use the `OccurrenceOrderPlugin` or `recordsPath`.\n\n## Usage\n\nThe minimum requirements for the `output` property in your webpack config is to set its value to an object including the following two things :\n\nYour preferred `filename` of the compiled file: `// main.js || bundle.js || index.js`\n\nAn [`output.path`](#output-path) as an **absolute path** for what directory you prefer it to go in once bundled.\n\n**webpack.config.js**\n\n```javascript\nconst config = {\n  output: {\n    filename: 'bundle.js',\n    path: '/home/proj/public/assets'\n  }\n};\n\nmodule.exports = config;\n```\n\n## Options\n\nThe following is a list of values you can pass to the `output` property.\n\n### `output.chunkFilename`\n\nThe filename of non-entry chunks as a relative path inside the `output.path` directory.\n\n`[id]` is replaced by the id of the chunk.\n\n`[name]` is replaced by the name of the chunk (or with the id when the chunk has no name).\n\n`[hash]` is replaced by the hash of the compilation.\n\n`[chunkhash]` is replaced by the hash of the chunk.\n\n### `output.crossOriginLoading`\n\nThis option enables cross-origin loading of chunks.\n\nPossible values are:\n\n`false` - Disable cross-origin loading.\n\n`\"anonymous\"` - Cross-origin loading is enabled. When using `anonymous` no credentials will be sent with the request.\n\n`\"use-credentials\"` - Cross-origin loading is enabled and credentials will be send with the request.\n\nFor more information on cross-origin loading see [MDN](https://developer.mozilla.org/en/docs/Web/HTML/Element/script#attr-crossorigin)\n\n> Default: `false`\n\n> see also [[library and externals]]\n\n> see also [[Development Tools]]\n\n### `output.devtoolLineToLine`\n\nEnable line-to-line mapped mode for all/specified modules. Line-to-line mapped mode uses a simple SourceMap where each line of the generated source is mapped to the same line of the original source. It's a performance optimization. Only use it if your performance needs to be better and you are sure that input lines match which generated lines.\n\n`true` enables it for all modules (not recommended)\n\nAn object `{test, include, exclude}` similar to `module.loaders` enables it for specific files.\n\n> Default: `false`\n\n### `output.filename`\n\nSpecifies the name of each output file on disk. You must **not** specify an absolute path here! The `output.path` option determines the location on disk the files are written. `filename` is used solely for naming the individual files.\n\n**single entry**\n\n```javascript\n{\n  entry: './src/app.js',\n  output: {\n    filename: 'bundle.js',\n    path: __dirname + '/build'\n  }\n}\n\n// writes to disk: ./build/bundle.js\n```\n\n**multiple entries**\n\nIf your configuration creates more than a single \"chunk\" (as with multiple entry points or when using plugins like CommonsChunkPlugin), you should use substitutions to ensure that each file has a unique name.\n\n`[name]` is replaced by the name of the chunk.\n\n`[hash]` is replaced by the hash of the compilation.\n\n`[chunkhash]` is replaced by the hash of the chunk.\n\n```javascript\n{\n  entry: {\n    app: './src/app.js',\n    search: './src/search.js'\n  },\n  output: {\n    filename: '[name].js',\n    path: __dirname + '/build'\n  }\n}\n\n// writes to disk: ./build/app.js, ./build/search.js\n```\n\n### `output.hotUpdateChunkFilename`\n\nThe filename of the Hot Update Chunks. They are inside the `output.path` directory.\n\n`[id]` is replaced by the id of the chunk.\n\n`[hash]` is replaced by the hash of the compilation. (The last hash stored in the records)\n\n> Default: `\"[id].[hash].hot-update.js\"`\n\n### `output.hotUpdateFunction`\n\nThe JSONP function used by webpack for async loading of hot update chunks.\n\n> Default: `\"webpackHotUpdate\"`\n\n### `output.hotUpdateMainFilename`\n\nThe filename of the Hot Update Main File. It is inside the `output.path` directory.\n\n`[hash]` is replaced by the hash of the compilation. (The last hash stored in the records)\n\n> Default: `\"[hash].hot-update.json\"`\n\n### `output.jsonpFunction`\n\nThe JSONP function used by webpack for async loading of chunks.\n\nA shorter function may reduce the file size a bit. Use a different identifier when having multiple webpack instances on a single page.\n\n> Default: `\"webpackJsonp\"`\n\n### `output.library`\n\nIf set, export the bundle as library. `output.library` is the name.\n\nUse this if you are writing a library and want to publish it as single file.\n\n### `output.libraryTarget`\n\nWhich format to export the library:\n\n`\"var\"` - Export by setting a variable: `var Library = xxx` (default)\n\n`\"this\"` - Export by setting a property of `this`: `this[\"Library\"] = xxx`\n\n`\"commonjs\"` - Export by setting a property of `exports`: `exports[\"Library\"] = xxx`\n\n`\"commonjs2\"` - Export by setting `module.exports`: `module.exports = xxx`\n\n`\"amd\"` - Export to AMD (optionally named - set the name via the library option)\n\n`\"umd\"` - Export to AMD, CommonJS2 or as property in root\n\n> Default: `\"var\"`\n\nIf `output.library` is not set, but `output.libraryTarget` is set to a value other than `var`, every property of the exported object is copied (Except `amd`, `commonjs2` and `umd`).\n\n### `output.path`\n\nThe output directory as an **absolute path** (required).\n\n`[hash]` is replaced by the hash of the compilation.\n\n**config.js**\n\n```javascript\noutput: {\n    path: \"/home/proj/public/assets\",\n    publicPath: \"/assets/\"\n}\n```\n\n**index.html**\n\n```html\n<head>\n  <link href=\"/assets/spinner.gif\"/>\n</head>\n```\n\nAnd a more complicated example of using a CDN and hashes for assets.\n\n**config.js**\n\n```javascript\noutput: {\n    path: \"/home/proj/cdn/assets/[hash]\",\n    publicPath: \"http://cdn.example.com/assets/[hash]/\"\n}\n```\n\n**Note:** In cases when the eventual `publicPath` of output files isn't known at compile time, it can be left blank and set dynamically at runtime in the entry point file. If you don't know the `publicPath` while compiling, you can omit it and set `__webpack_public_path__` on your entry point.\n\n```javascript\n __webpack_public_path__ = myRuntimePublicPath\n\n// rest of your application entry\n```\n\n### `output.sourceMapFilename`\n\nThe filename of the SourceMaps for the JavaScript files. They are inside the `output.path` directory.\n\n`[file]` is replaced by the filename of the JavaScript file.\n\n`[id]` is replaced by the id of the chunk.\n\n`[hash]` is replaced by the hash of the compilation.\n\n> Default: `\"[file].map\"`\n\n"
 	};
 
-/***/ },
-/* 218 */
-/***/ function(module, exports) {
+/***/ }),
+/* 222 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Plugins",
@@ -41917,9 +42657,9 @@ module.exports =
 		"__content": "\n\n**Plugins** are the [backbone](https://github.com/webpack/tapable) of webpack. webpack itself is built on the **same plugin system** that you use in your webpack configuration!\n\nThey also serve the purpose of doing **anything else** that a [loader](/concepts/loaders) cannot do.\n\n## Anatomy\n\nA webpack **plugin** is a JavaScript object that has an [`apply`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/apply) property. This `apply` property is called by the webpack compiler, giving access to the **entire** compilation lifecycle.\n\n**ConsoleLogOnBuildWebpackPlugin.js**\n\n```javascript\nfunction ConsoleLogOnBuildWebpackPlugin() {\n\n};\n\nConsoleLogOnBuildWebpackPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('run', function(compiler, callback) {\n    console.log(\"The webpack build process is starting!!!\");\n\n    callback();\n  });\n};\n```\n\nT> As a clever JavaScript developer you may remember the `Function.prototype.apply` method. Because of this method you can pass any function as plugin (`this` will point to the `compiler`). You can use this style to inline custom plugins in your configuration.\n\n## Usage\n\nSince **plugins** can take arguments/options, you must pass a `new` instance to the `plugins` property in your webpack configuration.\n\nDepending on how you are using webpack, there are multiple ways to use plugins.\n\n### Configuration\n\n**webpack.config.js**\n\n```javascript\nconst HtmlWebpackPlugin = require('html-webpack-plugin'); //installed via npm\nconst webpack = require('webpack'); //to access built-in plugins\nconst path = require('path');\n\nconst config = {\n  entry: './path/to/my/entry/file.js',\n  output: {\n    filename: 'my-first-webpack.bundle.js',\n    path: path.resolve(__dirname, 'dist')\n  },\n  module: {\n    rules: [\n      {\n        test: /\\.(js|jsx)$/,\n        loader: 'babel-loader'\n      }\n    ]\n  },\n  plugins: [\n    new webpack.optimize.UglifyJsPlugin(),\n    new HtmlWebpackPlugin({template: './src/index.html'})\n  ]\n};\n\nmodule.exports = config;\n```\n\n### Node API\n\n?> Even when using the Node API, users should pass plugins via the `plugins` property in the configuration. Using `compiler.apply` should not be the recommended way.\n\n**some-node-script.js**\n\n```javascript\n  const webpack = require('webpack'); //to access webpack runtime\n  const configuration = require('./webpack.config.js');\n\n  let compiler = webpack(configuration);\n  compiler.apply(new webpack.ProgressPlugin());\n\n  compiler.run(function(err, stats) {\n    // ...\n  });\n```\n\nT> Did you know: The example seen above is extremely similar to the [webpack runtime itself!](https://github.com/webpack/webpack/blob/e7087ffeda7fa37dfe2ca70b5593c6e899629a2c/bin/webpack.js#L290-L292) There are lots of great usage examples hiding in the [webpack source code](https://github.com/webpack/webpack) that you can apply to your own configurations and scripts!\n"
 	};
 
-/***/ },
-/* 219 */
-/***/ function(module, exports) {
+/***/ }),
+/* 223 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Targets",
@@ -41932,9 +42672,9 @@ module.exports =
 		"__content": "\n\nBecause JavaScript can be written for both server and browser, webpack offers multiple deployment _targets_ that you can set in your webpack [configuration](/configuration).\n\nW> The webpack `target` property is not to be confused with the `output.libraryTarget` property. For more information see [our guide](/concepts/output) on the `output` property.\n\n## Usage\n\nTo set the `target` property, you simply set the target value in your webpack config:\n\n**webpack.config.js**\n\n```javascript\nmodule.exports = {\n  target: 'node'\n};\n```\n\nIn the example above, using `node` webpack will compile for usage in a Node.js-like environment (uses Node.js `require` to load chunks and not touch any built in modules like `fs` or `path`).\n\nEach _target_ has a variety of deployment/environment specific additions, support to fit its needs. See what [targets are available](/configuration/target).\n\n?>Further expansion for other popular target values\n\n## Multiple Targets\n\nAlthough webpack does **not** support multiple strings being passed into the `target` property, you can create an isomorphic library by bundling two separate configurations:\n\n**webpack.config.js**\n\n```javascript\nvar path = require('path');\nvar serverConfig = {\n  target: 'node',\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'lib.node.js'\n  }\n  //…\n};\n\nvar clientConfig = {\n  target: 'web', // <=== can be omitted as default is 'web'\n  output: {\n    path: path.resolve(__dirname, 'dist'),\n    filename: 'lib.js'\n  }\n  //…\n};\n\nmodule.exports = [ serverConfig, clientConfig ];\n```\n\nThe example above will create a `lib.js` and `lib.node.js` file in your `dist` folder.\n\n## Resources\n\nAs seen from the options above there are multiple different deployment _targets_ that you can choose from. Below is a list of examples, and resources that you can refer to.\n\n### Bundle Output Comparison\n\n  **[compare-webpack-target-bundles](https://github.com/TheLarkInn/compare-webpack-target-bundles)**: A great resource for testing and viewing different webpack _targets_. Also great for bug reporting.\n\n?> Need to find up to date examples of these webpack targets being used in live code or boilerplates.\n"
 	};
 
-/***/ },
-/* 220 */
-/***/ function(module, exports) {
+/***/ }),
+/* 224 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "DevServer",
@@ -41948,9 +42688,9 @@ module.exports =
 		"__content": "\n\nwebpack-dev-server can be used to quickly develop an application. See the [\"How to Develop?\"](/guides/development) to get started.\n\nThis page describes the options that effect the behavior of webpack-dev-server (short: dev-server).\n\nT> Options that are compatible with [webpack-dev-middleware](https://github.com/webpack/webpack-dev-middleware) have 🔑 next to them.\n\n## `devServer`\n\n`object`\n\nThis set of options is picked up by [webpack-dev-server](https://github.com/webpack/webpack-dev-server) and can be used to change it's behavior in various ways. Here's a simple example that gzips and serves everything from our `dist/` directory:\n\n```js\ndevServer: {\n  contentBase: path.join(__dirname, \"dist\"),\n  compress: true,\n  port: 9000\n}\n```\n\nWhen the server is started, there will be a message prior to the list of resolved modules:\n\n```bash\nhttp://localhost:9000/\nwebpack result is served from /build/\ncontent is served from dist/\n```\n\nthat will give some background on where the server is located and what it's serving.\n\nIf you're using dev-server through the Node.js API, the options in `devServer` will be ignored. Pass the options as a second parameter instead: `new WebpackDevServer(compiler, {...})`.\n\n\n## `devServer.clientLogLevel`\n\n`string`\n\nWhen using *inline mode*, the console in your DevTools will show you messages e.g. before reloading, before an error or when Hot Module Replacement is enabled. This may be too verbose.\n\nYou can prevent all these messages from showing, by using this option:\n\n```js\nclientLogLevel: \"none\"\n```\n\nPossible values are `none`, `error`, `warning` or `info` (default).\n\nNote that the console will *always* show bundle errors and warnings. This option only effects the message before it.\n\n\n## `devServer.compress`\n\n`boolean`\n\nEnable [gzip compression](https://betterexplained.com/articles/how-to-optimize-your-site-with-gzip-compression/) for everything served:\n\n```js\ncompress: true\n```\n\n\n## `devServer.contentBase`\n\n`boolean` `string` `array`\n\nTell the server where to serve content from. This is only necessary if you want to serve static files. [`devServer.publicPath`](#devserver-publicpath-) will be used to determine where the bundles should be served from, and takes precedence.\n\nBy default it will use your current working directory to serve content, but you can modify this to another directory:\n\n```js\ncontentBase: path.join(__dirname, \"public\")\n```\n\nNote that it is recommended to use an absolute path.\n\nIt is also possible to serve from multiple directories:\n\n```js\ncontentBase: [path.join(__dirname, \"public\"), path.join(__dirname, \"assets\")]\n```\n\nTo disable `contentBase`:\n\n```js\ncontentBase: false\n```\n\n\n## `devServer.filename` 🔑\n\n`string`\n\nThis option lets you reduce the compilations in **lazy mode**.\nBy default in **lazy mode**, every request results in a new compilation. With `filename`, it's possible to only compile when a certain file is requested.\n\nIf `output.filename` is set to `bundle.js` and `filename` is used like this:\n\n```js\nlazy: true,\nfilename: \"bundle.js\"\n```\n\nIt will now only compile the bundle when `/bundle.js` is requested.\n\nT> `filename` has no effect when used without **lazy mode**.\n\n\n## `devServer.headers` 🔑\n\n`object`\n\nAdds headers to all requests:\n\n```js\nheaders: {\n  \"X-Custom-Foo\": \"bar\"\n}\n```\n\n\n## `devServer.historyApiFallback`\n\n`boolean` `object`\n\nWhen using the [HTML5 History API](https://developer.mozilla.org/en-US/docs/Web/API/History), the `index.html` page will likely have be served in place of any `404` responses. Enable this by passing:\n\n```js\nhistoryApiFallback: true\n```\n\nBy passing an object this behavior can be controlled further using options like `rewrites`:\n\n```js\nhistoryApiFallback: {\n  rewrites: [\n    { from: /^\\/$/, to: '/views/landing.html' },\n    { from: /^\\/subpage/, to: '/views/subpage.html' },\n    { from: /./, to: '/views/404.html' }\n  ]\n}\n```\n\nWhen using dots in your path (common with Angular), you may need to use the `disableDotRule`:\n\n```js\nhistoryApiFallback: {\n  disableDotRule: true\n}\n```\n\nFor more options and information, see the [connect-history-api-fallback](https://github.com/bripkens/connect-history-api-fallback) documentation.\n\n\n## `devServer.host` - CLI only\n\n`string`\n\nSpecify a host to use. By default this is `localhost`. If you want your server to be accessible externally, specify it like this:\n\n```js\nhost: \"0.0.0.0\"\n```\n\n\n## `devServer.hot`\n\n`boolean`\n\nEnable webpack's Hot Module Replacement feature:\n\n```js\nhot: true\n```\n\n?> Add various other steps needed for this to work. (From my experience, and the current docs it looks like other steps are needed here - not like in the cmd line where it's just a flag)\n\n\n## `devServer.https`\n\n`boolean` `object`\n\nBy default dev-server will be served over HTTP. It can optionally be served over HTTP/2 with HTTPS:\n\n```js\nhttps: true\n```\n\nWith the above setting a self-signed certificate is used, but you can provide your own:\n\n```js\nhttps: {\n  key: fs.readFileSync(\"/path/to/server.key\"),\n  cert: fs.readFileSync(\"/path/to/server.crt\"),\n  ca: fs.readFileSync(\"/path/to/ca.pem\"),\n}\n```\n\nThis object is passed straight to Node.js HTTPS module, so see the [HTTPS documentation](https://nodejs.org/api/https.html) for more information.\n\n\n## `devServer.inline` - CLI only\n\n`boolean`\n\nToggle between the dev-server's two different modes. By default the application will be served with *inline mode* enabled. This means that a script will be inserted in your bundle to take care of live reloading, and build messages will appear in the browser console.\n\nIt is also possible to use **iframe mode**, which uses an `<iframe>` under a notification bar with messages about the build. To switch to **iframe mode**:\n\n```js\ninline: false\n```\n\nT> Inline mode is recommended when using Hot Module Replacement.\n\n\n## `devServer.lazy` 🔑\n\n`boolean`\n\nWhen `lazy` is enabled, the dev-server will only compile the bundle when it gets requested. This means that webpack will not watch any file changes. We call this **lazy mode**.\n\n```js\nlazy: true\n```\n\nT> `watchOptions` will have no effect when used with **lazy mode**.\n\nT> If you use the CLI, make sure **inline mode** is disabled.\n\n\n## `devServer.noInfo` 🔑\n\n`boolean`\n\nWith `noInfo` enabled, messages like the webpack bundle information that is shown when starting up and after each save, will be hidden. Errors and warnings will still be shown.\n\n```js\nnoInfo: true\n```\n\n\n## `devServer.port` - CLI only\n\n`number`\n\nSpecify a port number to listen for requests on:\n\n```js\nport: 8080\n```\n\n\n## `devServer.proxy`\n\n`object`\n\nProxying some URLs can be useful when you have a separate API backend development server and you want to send API requests on the same domain.\n\nThe dev-server makes use of the powerful [http-proxy-middleware](https://github.com/chimurai/http-proxy-middleware) package. Checkout its [documentation](https://github.com/chimurai/http-proxy-middleware#options) for more advanced usages.\n\nWith a backend on `localhost:3000`, you can use this to enable proxying:\n\n```js\nproxy: {\n  \"/api\": \"http://localhost:3000\"\n}\n```\n\nA request to `/api/users` will now proxy the request to `http://localhost:3000/api/users`.\n\nIf you don't want `/api` to be passed along, we need to rewrite the path:\n\n```js\nproxy: {\n  \"/api\": {\n    target: \"http://localhost:3000\",\n    pathRewrite: {\"^/api\" : \"\"}\n  }\n}\n```\n\nA backend server running on HTTPS with an invalid certificate will not be accepted by default. If you want to, modify your config like this:\n\n```js\nproxy: {\n  \"/api\": {\n    target: \"https://other-server.example.com\",\n    secure: false\n  }\n}\n```\n\nSometimes you don't want to proxy everything. It is possible to bypass the proxy based on the return value of a function.\n\nIn the function you get access to the request, response and proxy options. It must return either `false` or a path that will be served instead of continuing to proxy the request.\n\nE.g. for a browser request, you want to serve a HTML page, but for an API request you want to proxy it. You could do something like this:\n\n```js\nproxy: {\n  \"/api\": {\n    target: \"http://localhost:3000\",\n    bypass: function(req, res, proxyOptions) {\n      if (req.headers.accept.indexOf(\"html\") !== -1) {\n        console.log(\"Skipping proxy for browser request.\");\n        return \"/index.html\";\n      }\n    }\n  }\n}\n```\n\n\n## `devServer.public` - CLI only\n\n`string`\n\nWhen using *inline mode* and you're proxying dev-server, the inline client script does not always know where to connect to. It will try to guess the URL of the server based on `window.location`, but if that fails you'll need to use this.\n\nFor example, the dev-server is proxied by nginx, and available on `myapp.test`:\n\n```js\npublic: \"myapp.test:80\"\n```\n\n\n## `devServer.publicPath` 🔑\n\n`string`\n\nThe bundled files will be available in the browser under this path.\n\nImagine that the server is running under `http://localhost:8080` and `output.filename` is set to `bundle.js`. By default the `publicPath` is `\"/\"`, so your bundle is available as `http://localhost:8080/bundle.js`.\n\nThe `publicPath` can be changed so the bundle is put in a directory:\n\n```js\npublicPath: \"/assets/\"\n```\n\nThe bundle will now be available as `http://localhost:8080/assets/bundle.js`.\n\nT> Make sure `publicPath` always starts and ends with a forward slash.\n\nIt is also possible to use a full URL. This is necessary for Hot Module Replacement.\n\n```js\npublicPath: \"http://localhost:8080/assets/\"\n```\n\nThe bundle will also be available as `http://localhost:8080/assets/bundle.js`.\n\nT> It is recommended that `devServer.publicPath` is the same as `output.publicPath`.\n\n\n## `devServer.quiet` 🔑\n\n`boolean`\n\nWith `quiet` enabled, nothing except the initial startup information will be written to the console. This also means that errors or warnings from webpack are not visible.\n\n```js\nquiet: true\n```\n\n\n## `devServer.staticOptions`\n\nIt is possible to configure advanced options for serving static files from `contentBase`. See the [Express documentation](http://expressjs.com/en/4x/api.html#express.static) for the possible options. An example:\n\n```js\nstaticOptions: {\n  redirect: false\n}\n```\n\nT> This only works when using `contentBase` as a `string`.\n\n\n## `devServer.stats` 🔑\n\n`string` `object`\n\nThis option lets you precisely control what bundle information gets displayed. This can be a nice middle ground if you want some bundle information, but not all of it.\n\nTo show only errors in your bundle:\n\n```js\nstats: \"errors-only\"\n```\n\nFor more information, see the [**stats documentation**](/configuration/stats).\n\nT> This option has no effect when used with `quiet` or `noInfo`.\n\n\n## `devServer.watchContentBase`\n\n`boolean`\n\nTell the server to watch the files served by the `devServer.contentBase` option. File changes will trigger a full page reload.\n\n```js\nwatchContentBase: true\n```\n\nIt is disabled by default.\n\n\n## `devServer.watchOptions` 🔑\n\n`object`\n\nControl options related to watching the files.\n\nwebpack uses the file system to get notified of file changes. In some cases this does not work. For example, when using Network File System (NFS). [Vagrant](https://www.vagrantup.com/) also has a lot of problems with this. In these cases, use polling:\n\n```js\nwatchOptions: {\n  poll: true\n}\n```\n\nIf this is too heavy on the file system, you can change this to an integer to set the interval in milliseconds.\n\nSee [WatchOptions](/configuration/watch) for more options.\n"
 	};
 
-/***/ },
-/* 221 */
-/***/ function(module, exports) {
+/***/ }),
+/* 225 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Devtool",
@@ -41963,9 +42703,9 @@ module.exports =
 		"__content": "\n\nThis option controls if and how Source Maps are generated.\n\n## `devtool`\n\n`string` `false`\n\nChoose a style of [source mapping](http://blog.teamtreehouse.com/introduction-source-maps) to enhance the debugging process. These values can affect build and rebuild speed dramatically.\n\n devtool                      | build | rebuild | production | quality\n------------------------------|-------|---------|------------|--------------------------\n eval                         | +++   | +++     | no         | generated code\n cheap-eval-source-map        | +     | ++      | no         | transformed code (lines only)\n cheap-source-map             | +     | o       | yes        | transformed code (lines only)\n cheap-module-eval-source-map | o     | ++      | no         | original source (lines only)\n cheap-module-source-map      | o     | -       | yes        | original source (lines only)\n eval-source-map              | --    | +       | no         | original source\n source-map                   | --    | --      | yes        | original source\n nosources-source-map         | --    | --      | yes        | without source content\n\nSome of these values are suited for development and some for production. For development you typically want fast Source Maps at the cost of bundle size, but for production you want separate Source Maps that are accurate.\n\nW> There are some issues with Source Maps in Chrome. [We need your help!](https://github.com/webpack/webpack/issues/3165).\n\n### For development\n\n`eval` - Each module is executed with `eval()` and `//@ sourceURL`. This is pretty fast. The main disadvantage is that it doesn't display line numbers correctly since it gets mapped to transpiled code instead of the original code.\n\n`inline-source-map` - A SourceMap is added as a DataUrl to the bundle.\n\n`eval-source-map` - Each module is executed with `eval()` and a SourceMap is added as a DataUrl to the `eval()`. Initially it is slow, but it provides fast rebuild speed and yields real files. Line numbers are correctly mapped since it gets mapped to the original code.\n\n`cheap-module-eval-source-map` - Like `eval-source-map`, each module is executed with `eval()` and a SourceMap is added as a DataUrl to the `eval()`. It is \"cheap\" because it doesn't have column mappings, it only maps line numbers.\n\n### For production\n\n`source-map` - A full SourceMap is emitted as a separate file. It adds a reference comment to the bundle so development tools know where to find it.\n\n`hidden-source-map` - Same as `source-map`, but doesn't add a reference comment to the bundle. Useful if you only want SourceMaps to map error stack traces from error reports, but don't want to expose your SourceMap for the browser development tools.\n\n`cheap-source-map` - A SourceMap without column-mappings ignoring loaded Source Maps.\n\n`cheap-module-source-map` - A SourceMap without column-mappings that simplifies loaded Source Maps to a single mapping per line.\n\n`nosources-source-map` - A SourceMap is created without the `sourcesContent` in it. It can be used to map stack traces on the client without exposing all of the source code.\n\nT> See [`output.sourceMapFilename`](/configuration/output#output-sourcemapfilename) to customize the filenames of generated Source Maps.\n\n?> This page needs more information to make it easier for users to choose a good option.\n\n# References\n\n- [Enabling Sourcemaps](http://survivejs.com/webpack/developing-with-webpack/enabling-sourcemaps/)\n- [webpack devtool source map](http://cheng.logdown.com/posts/2016/03/25/679045\n)\n"
 	};
 
-/***/ },
-/* 222 */
-/***/ function(module, exports) {
+/***/ }),
+/* 226 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Entry and Context",
@@ -41978,9 +42718,9 @@ module.exports =
 		"__content": "\n\nThe entry object is where webpack looks to start building the bundle. The context is an absolute string to the directory that contains the entry files.\n\n## `context`\n\n`string`\n\nThe base directory, an **absolute path**, for resolving entry points and loaders from configuration.\n\n``` js\ncontext: path.resolve(__dirname, \"app\")\n```\n\nBy default the current directory is used, but it's recommended to pass a value in your configuration. This makes your configuration independent from CWD.\n\n---\n\n## `entry`\n\n`string | [string] | object { <key>: string | [string] }`\n\nThe point or points to enter the application. At this point the application starts executing. If an array is passed all items will be executed.\n\nA dynamically loaded module is **not** an entry point.\n\nSimple rule: one entry point per HTML page. SPA: one entry point, MPA: multiple entry points.\n\n```js\nentry: {\n  home: \"./home.js\",\n  about: \"./about.js\",\n  contact: \"./contact.js\"\n}\n```\n\nWhen combining with the [`output.library`](/configuration/output#output-library) option: If an array is passed only the last item is exported.\n"
 	};
 
-/***/ },
-/* 223 */
-/***/ function(module, exports) {
+/***/ }),
+/* 227 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "External Configurations",
@@ -41992,9 +42732,9 @@ module.exports =
 		"__content": "\n\n...\n\n?> possible extensions, e.g. `.babel.js`\n\n?> loader settings, e.g. `sassLoader`, `eslint` sections"
 	};
 
-/***/ },
-/* 224 */
-/***/ function(module, exports) {
+/***/ }),
+/* 228 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Externals",
@@ -42007,9 +42747,9 @@ module.exports =
 		"__content": "\n\n`externals` configuration in webpack provides a way of not including a dependency in the bundle. Instead the created bundle relies on that dependency to be present in the consumers environment.\nThis typically applies to library developers though application developers can make good use of this feature too.\n\n## `externals`\n\n`string` `regex` `function` `array` `object`\n\n**Prevent bundling** of certain `import`ed packages and instead retrieve these *external packages at runtime*.\n\nFor example, to include [jQuery](https://jquery.com/) from a CDN instead of bundling it:\n\n**index.html**\n\n```html\n...\n<script src=\"https://code.jquery.com/jquery-3.1.0.js\"\n  integrity=\"sha256-slogkvB1K3VOkzAI8QITxV3VzpOnkeNVsKvtkYLMjfk=\"\n  crossorigin=\"anonymous\"></script>\n...\n```\n\n**webpack.config.js**\n\n```javascript\nexternals: {\n  jquery: 'jQuery'\n}\n```\n\nThis leaves any dependant modules unchanged, i.e. the code shown below will still work:\n\n```javascript\nimport $ from 'jquery';\n\n$('.my-element').animate(...);\n```\n\nT> __consumer__ here is any end user application that includes the library that you have bundled using webpack.\n\nYour bundle which has external dependencies can be used in various module contexts mainly [CommonJS, AMD, global and ES2015 modules](/concepts/modules). The external library may be available in any of the above form but under different variables.\n\n`externals` supports the following module contexts\n\n  * __global__ - An external library can be available as a global variable. The consumer can achieve this by including the external library in a script tag. This is the default setting for externals.\n  * __commonjs__ -  The consumer application may be using a CommonJS module system and hence the external library should be available as a CommonJS module.\n  * __commonjs2__ -  Similar to the above line but where the export is `module.exports.default`.\n  * __amd__ - Similar to the above line but using AMD module system.\n\n`externals` accepts various syntax and interprets them in different manners.\n\n### string\n\n`jQuery` in the externals indicates that your bundle will need `jQuery` variable in the global form.\n\n### array\n\n```javascript\nexternals: {\n  subtract: ['./math', 'subtract']\n}\n```\n\n`subtract: ['./math', 'subtract']` converts to a parent child construct, where `./math` is the parent module and your bundle only requires the subset under `subtract` variable.\n\n### object\n\n```javascript\nexternals : {\n  react: 'react'\n}\n\n// or\n\nexternals : {\n  lodash : {\n    commonjs: \"lodash\",\n    amd: \"lodash\",\n    root: \"_\" // indicates global variable\n  }\n}\n```\n\nThis syntax is used to describe all the possible ways that an external library can be available. `lodash` here is available as `lodash` under AMD and CommonJS module systems but available as `_` in a global variable form.\n\n### function\n\n?> TODO - Not sure how to use it in and function form. Would be great to see a sample.\n\n### regex\n\n?> TODO - I think its overkill to list externals as regex.\n\nFor more information on how to use this configuration, please refer to the article on [how to author a library](/guides/author-libraries).\n"
 	};
 
-/***/ },
-/* 225 */
-/***/ function(module, exports) {
+/***/ }),
+/* 229 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Configuration",
@@ -42025,9 +42765,9 @@ module.exports =
 		"__content": "\n\nwebpack is fed via a configuration object. It is passed in one of two ways depending on how you are using webpack: through the terminal or via Node.js. All the available configuration options are specified below.\n\nT> New to webpack? Check out our guide to some of webpack's [core concepts](/concepts) to get started!\n\nT> Notice that throughout the configuration we use Node's built-in [path module](https://nodejs.org/api/path.html) and prefix it with the [__dirname](https://nodejs.org/docs/latest/api/globals.html#globals_dirname) global. This prevents file path issues between operating systems and allows relative paths to work as expected. See [this section](https://nodejs.org/api/path.html#path_windows_vs_posix) for more info on POSIX vs. Windows paths.\n\n## Options\n\n``` js-with-links-with-details\nvar path = require('path');\n\n{\n  // click on the name of the option to get to the detailed documentation\n  // click on the items with arrows to show more examples / advanced options\n\n  <details><summary>[entry](/configuration/entry-context#entry): \"./app/entry\", // string | object | array</summary>\n  [entry](/configuration/entry-context#entry): [\"./app/entry1\", \"./app/entry2\"],\n  [entry](/configuration/entry-context#entry): {\n    a: \"./app/entry-a\",\n    b: [\"./app/entry-b1\", \"./app/entry-b2\"]\n  },\n  </details>\n  // Here the application starts executing\n  // and webpack starts bundling\n\n  [output](/configuration/output): {\n    // options related to how webpack emits results\n\n    [path](/configuration/output#output-path): path.resolve(__dirname, \"dist\"), // string\n    // the target directory for all output files\n    // must be an absolute path (use the Node.js path module)\n\n    <details><summary>[filename](/configuration/output#output-filename): \"bundle.js\", // string</summary>\n    [filename](/configuration/output#output-filename): \"[name].js\", // for multiple entry points\n    [filename](/configuration/output#output-filename): \"[chunkhash].js\", // for [long term caching](/guides/caching)\n    </details>\n    // the filename template for entry chunks\n\n    <details><summary>[publicPath](/configuration/output#output-publicpath): \"/assets/\", // string</summary>\n    [publicPath](/configuration/output#output-publicpath): \"\",\n    [publicPath](/configuration/output#output-publicpath): \"https://cdn.example.com/\",\n    </details>\n    // the url to the output directory resolved relative to the HTML page\n\n    [library](/configuration/output#output-library): \"MyLibrary\", // string,\n    // the name of the exported library\n\n    <details><summary>[libraryTarget](/configuration/output#output-librarytarget): \"umd\", // enum</summary>\n    [libraryTarget](/configuration/output#output-librarytarget): \"umd-module\", // ES2015 module wrapped in UMD\n    [libraryTarget](/configuration/output#output-librarytarget): \"commonjs-module\", // ES2015 module wrapped in CommonJS\n    [libraryTarget](/configuration/output#output-librarytarget): \"commonjs2\", // exported with module.exports\n    [libraryTarget](/configuration/output#output-librarytarget): \"commonjs\", // exported as properties to exports\n    [libraryTarget](/configuration/output#output-librarytarget): \"amd\", // defined with AMD defined method\n    [libraryTarget](/configuration/output#output-librarytarget): \"this\", // property set on this\n    [libraryTarget](/configuration/output#output-librarytarget): \"var\", // variable defined in root scope\n    </details>\n    // the type of the exported library\n\n    <details><summary>/* Advanced output configuration (click to show) */</summary>\n\n    [pathinfo](/configuration/output#output-pathinfo): true, // boolean\n    // include useful path info about modules, exports, requests, etc. into the generated code\n\n    [chunkFilename](/configuration/output#output-chunkfilename): \"[id].js\",\n    [chunkFilename](/configuration/output#output-chunkfilename): \"[chunkhash].js\", // for [long term caching](/guides/caching)\n    // the filename template for additional chunks\n\n    [jsonpFunction](/configuration/output#output-jsonpfunction): \"myWebpackJsonp\", // string\n    // name of the JSONP function used to load chunks\n\n    [sourceMapFilename](/configuration/output#output-sourcemapfilename): \"[file].map\", // string\n    [sourceMapFilename](/configuration/output#output-sourcemapfilename): \"sourcemaps/[file].map\", // string\n    // the filename template of the source map location\n\n    [devtoolModuleFilenameTemplate](/configuration/output#output-devtoolmodulefilenametemplate): \"webpack:///[resource-path]\", // string\n    // the name template for modules in a devtool\n\n    [devtoolFallbackModuleFilenameTemplate](/configuration/output#output-devtoolfallbackmodulefilenametemplate): \"webpack:///[resource-path]?[hash]\", // string\n    // the name template for modules in a devtool (used for conflicts)\n\n    [umdNamedDefine](/configuration/output#output-umdnameddefine): true, // boolean\n    // use a named AMD module in UMD library\n\n    [crossOriginLoading](/configuration/output#output-crossoriginloading): \"use-credentials\", // enum\n    [crossOriginLoading](/configuration/output#output-crossoriginloading): \"anonymous\",\n    [crossOriginLoading](/configuration/output#output-crossoriginloading): false,\n    // specifies how cross origin request are issued by the runtime\n\n    <details><summary>/* Expert output configuration (on own risk) */</summary>\n\n    [devtoolLineToLine](/configuration/output#output-devtoollinetoline): {\n      test: /\\.jsx$/\n    },\n    // use a simple 1:1 mapped SourceMaps for these modules (faster)\n\n    [hotUpdateMainFilename](/configuration/output#output-hotupdatemainfilename): \"[hash].hot-update.json\", // string\n    // filename template for HMR manifest\n\n    [hotUpdateChunkFilename](/configuration/output#output-hotupdatechunkfilename): \"[id].[hash].hot-update.js\", // string\n    // filename template for HMR chunks\n\n    [sourcePrefix](/configuration/output#output-sourceprefix): \"\\t\", // string\n    // prefix module sources in bundle for better readablitity\n    </details>\n    </details>\n  },\n\n  [module](/configuration/module): {\n    // configuration regarding modules\n\n    [rules](/configuration/module#module-rules): [\n      // rules for modules (configure loaders, parser options, etc.)\n\n      {\n        [test](/configuration/module#rule-test): /\\.jsx?$/,\n        [include](/configuration/module#rule-include): [\n          path.resolve(__dirname, \"app\")\n        ],\n        [exclude](/configuration/module#rule-exclude): [\n          path.resolve(__dirname, \"app/demo-files\")\n        ]\n        // these are matching conditions, each accepting a regular expression or string\n        // test and include have the same behavior, both must be matched\n        // exclude must not be matched (takes preferrence over test and include)\n        // Best practices:\n        // - Use RegExp only in test and for filename matching\n        // - Use arrays of absolute paths in include and exclude\n        // - Try to avoid exclude and prefer include\n\n        [issuer](/configuration/module#rule-issuer): { test, include, exclude },\n        // conditions for the issuer (the origin of the import)\n\n        [enforce](/configuration/module#rule-enforce): \"pre\",\n        [enforce](/configuration/module#rule-enforce): \"post\",\n        // flags to apply these rules, even if they are overridden (advanced option)\n\n        [loader](/configuration/module#rule-loader): \"babel-loader\",\n        // the loader which should be applied, it'll be resolved relative to the context\n        // -loader suffix is no longer optional in webpack2 for clarity reasons\n        // see [webpack 1 upgrade guide](/guides/migrating)\n\n        [options](/configuration/module#rule-options-rule-query): {\n          presets: [\"es2015\"]\n        },\n        // options for the loader\n      },\n\n      {\n        [test](/configuration/module#rule-test): \"\\.html$\",\n\n        [use](/configuration/module#rule-use): [\n          // apply multiple loaders and options\n          \"htmllint-loader\",\n          {\n            loader: \"html-loader\",\n            options: {\n              /* ... */\n            }\n          }\n        ]\n      },\n\n      { [oneOf](/configuration/module#rule-oneof): [ /* rules */ ] }\n      // only use one of these nested rules\n\n      { [rules](/configuration/module#rule-rules): [ /* rules */ ] }\n      // use all of these nested rules (combine with conditions to be useful)\n\n      { [resource](/configuration/module#rule-resource): { [and](/configuration/module#condition): [ /* conditions */ ] } }\n      // matches only if all conditions are matched\n\n      { [resource](/configuration/module#rule-resource): { [or](/configuration/module#condition): [ /* conditions */ ] } }\n      { [resource](/configuration/module#rule-resource): [ /* conditions */ ] }\n      // matches if any condition is matched (default for arrays)\n\n      { [resource](/configuration/module#rule-resource): { [not](/configuration/module#condition): /* condition */ } }\n      // matches if the condition is not matched\n    ],\n\n    <details><summary>/* Advanced module configuration (click to show) */</summary>\n\n    [noParse](/configuration/module#module-noparse): [\n      /special-library\\.js$/\n    ],\n    // do not parse this module\n\n    unknownContextRequest: \".\",\n    unknownContextRecursive: true,\n    unknownContextRegExp: /^\\.\\/.*$/,\n    unknownContextCritical: true,\n    exprContextRequest: \".\",\n    exprContextRegExp: /^\\.\\/.*$/,\n    exprContextRecursive: true,\n    exprContextCritical: true,\n    wrappedContextRegExp: /.*/,\n    wrappedContextRecursive: true,\n    wrappedContextCritical: false,\n    // specifies default behavior for dynamic requests\n    </details>\n  },\n\n  [resolve](/configuration/resolve): {\n    // options for resolving module requests\n    // (does not apply to resolving to loaders)\n\n    [modules](/configuration/resolve#resolve-modules): [\n      \"node_modules\",\n      path.resolve(__dirname, \"app\")\n    ],\n    // directories where to look for modules\n\n    [extensions](/configuration/resolve#resolve-extensions): [\".js\", \".json\", \".jsx\", \".css\"],\n    // extensions that are used\n\n    [alias](/configuration/resolve#resolve-alias): {\n      // a list of module name aliases\n\n      \"module\": \"new-module\",\n      // alias \"module\" -> \"new-module\" and \"module/path/file\" -> \"new-module/path/file\"\n\n      \"only-module$\": \"new-module\",\n      // alias \"only-module\" -> \"new-module\", but not \"module/path/file\" -> \"new-module/path/file\"\n\n      \"module\": path.resolve(__dirname, \"app/third/module.js\"),\n      // alias \"module\" -> \"./app/third/module.js\" and \"module/file\" results in error\n      // modules aliases are imported relative to the current context\n    },\n    <details><summary>/* alternative alias syntax (click to show) */</summary>\n    [alias](/configuration/resolve#resolve-alias): [\n      {\n        **name**: \"module\",\n        // the old request\n\n        **alias**: \"new-module\",\n        // the new request\n\n        **onlyModule**: true\n        // if true only \"module\" is aliased\n        // if false \"module/inner/path\" is also aliased\n      }\n    ],\n    </details>\n\n    <details><summary>/* Advanced resolve configuration (click to show) */</summary>\n\n    [symlinks](/configuration/resolve#resolve-symlinks): true,\n    // follow symlinks to new location\n\n    [descriptionFiles](/configuration/resolve#resolve-descriptionfiles): [\"package.json\"],\n    // files that are read for package description\n\n    [mainFields](/configuration/resolve#resolve-mainfields): [\"main\"],\n    // properties that are read from description file\n    // when a folder is requested\n\n    [aliasFields](/configuration/resolve#resolve-aliasfields): [\"browser\"],\n    // properites that are read from description file\n    // to alias requests in this package\n\n    [enforceExtension](/configuration/resolve#resolve-enforceextension): false,\n    // if true request must not include an extensions\n    // if false request may already include an extension\n\n    [moduleExtensions](/configuration/resolve#resolve-moduleextensions): [\"-module\"],\n    [enforceModuleExtension](/configuration/resolve#resolve-enforcemoduleextension): false,\n    // like extensions/enforceExtension but for module names instead of files\n\n    [unsafeCache](/configuration/resolve#resolve-unsafecache): true,\n    [unsafeCache](/configuration/resolve#resolve-unsafecache): {},\n    // enables caching for resolved requests\n    // this is unsafe as folder structure may change\n    // but preformance improvement is really big\n\n    [cachePredicate](/configuration/resolve#resolve-cachepredicate): (path, request) => true,\n    // predicate function which selects requests for caching\n\n    [plugins](/configuration/resolve#resolve-plugins): [\n      // ...\n    ]\n    // additional plugins applied to the resolver\n    </details>\n  },\n\n  [performance](/configuration/performance): {\n    <details><summary>[hints](/configuration/performance#performance-hints): \"warning\", // enum </summary>\n    [hints](/configuration/performance#performance-hints): \"error\", // emit errors for perf hints\n    [hints](/configuration/performance#performance-hints): false, // turn off perf hints\n    </details>\n    [maxAssetSize](/configuration/performance#performance-maxassetsize): 200000, // int (in bytes),\n    [maxEntrypointSize](/configuration/performance#performance-maxentrypointsize): 400000, // int (in bytes)\n    [assetFilter](/configuration/performance#performance-assetfilter): function(assetFilename) { \n      // Function predicate that provides asset filenames\n      return assetFilename.endsWith('.css') || assetFilename.endsWith('.js');\n    }\n  },\n\n  <details><summary>[devtool](/configuration/devtool): \"source-map\", // enum </summary>\n  [devtool](/configuration/devtool): \"inline-source-map\", // inlines SourceMap into orginal file\n  [devtool](/configuration/devtool): \"eval-source-map\", // inlines SourceMap per module\n  [devtool](/configuration/devtool): \"hidden-source-map\", // SourceMap without reference in original file\n  [devtool](/configuration/devtool): \"cheap-source-map\", // cheap-variant of SourceMap without module mappings\n  [devtool](/configuration/devtool): \"cheap-module-source-map\", // cheap-variant of SourceMap with module mappings\n  [devtool](/configuration/devtool): \"eval\", // no SourceMap, but named modules. Fastest at the expense of detail. \n  </details>\n  // enhance debugging by adding meta info for the browser devtools\n  // source-map most detailed at the expense of build speed.\n\n  [context](/configuration/entry-context#context): __dirname, // string (absolute path!)\n  // the home directory for webpack\n  // the [entry](/configuration/entry-context) and [module.rules.loader](/configuration/module#rule-loader) option\n  //   is resolved relative to this directory\n\n  <details><summary>[target](/configuration/target): \"web\", // enum</summary>\n  [target](/configuration/target): \"webworker\", // WebWorker\n  [target](/configuration/target): \"node\", // Node.js via require\n  [target](/configuration/target): \"async-node\", // Node.js via fs and vm\n  [target](/configuration/target): \"node-webkit\", // nw.js\n  [target](/configuration/target): \"electron-main\", // electron, main process\n  [target](/configuration/target): \"electron-renderer\", // electron, renderer process\n  [target](/configuration/target): (compiler) => { /* ... */ }, // custom\n  </details>\n  // the environment in which the bundle should run\n  // changes chunk loading behavior and available modules\n\n  <details><summary>[externals](/configuration/externals): [\"react\", /^@angular\\//],</summary>\n  [externals](/configuration/externals): \"react\", // string (exact match)\n  [externals](/configuration/externals): /^[a-z\\-]+($|\\/)/, // Regex\n  [externals](/configuration/externals): { // object\n    angular: \"this angular\", // this[\"angular\"]\n    react: { // UMD\n      commonjs: \"react\",\n      commonjs2: \"react\",\n      amd: \"react\",\n      root: \"React\"\n    }\n  },\n  [externals](/configuration/externals): (request) => { /* ... */ return \"commonjs \" + request }\n  </details>\n  // Don't follow/bundle these modules, but request them at runtime from the environment\n\n  [stats](stats): {\n    /* TODO */\n  },\n\n  [devServer](/configuration/dev-server): {\n    /* TODO */\n  },\n\n  [plugins](plugins): [\n    // ...\n  ],\n  // list of additional plugins\n  \n  \n  <details><summary>/* Advanced configuration (click to show) */</summary>\n\n  [resolveLoader](/configuration/resolve#resolveloader): { /* same as resolve */ }\n  // separate resolve options for loaders\n\n  [profile](other-options#profile): true, // boolean\n  // capture timing information\n  \n  [bail](other-options#bail): true, //boolean\n  // fail out on the first error instead of tolerating it.\n  \n  [cache](other-options#cache): false, // boolean\n  // disable/enable caching\n\n  [watch](watch#watch): true, // boolean\n  // enables watching\n\n  [watchOptions](watch#watchoptions): {\n    [aggregateTimeout](watch#watchoptions-aggregatetimeout): 1000, // in ms\n    // aggregates multiple changes to a single rebuild\n\n    [poll](watch#watchoptions-poll): true,\n    [poll](watch#watchoptions-poll): 500, // intervall in ms\n    // enables polling mode for watching\n    // must be used on filesystems that doesn't notify on change\n    // i. e. nfs shares\n  },\n\n  [node](node): {\n    /* TODO */\n  },\n\n  [recordsPath](other-options#recordspath): path.resolve(__dirname, \"build/records.json\"),\n  [recordsInputPath](other-options#recordsinputpath): path.resolve(__dirname, \"build/records.json\"),\n  [recordsOutputPath](other-options#recordsoutputpath): path.resolve(__dirname, \"build/records.json\"),\n  // TODO\n\n  </details>\n}\n```\n"
 	};
 
-/***/ },
-/* 226 */
-/***/ function(module, exports) {
+/***/ }),
+/* 230 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Module",
@@ -42040,9 +42780,9 @@ module.exports =
 		"__content": "\n\nThese options determine how the [different types of modules](/concepts/modules) within a project will be treated.\n\n## `module.noParse`\n\n`RegExp | [RegExp]`\n\nPrevent webpack from parsing any files matching the given regular expression(s). Ignored files **should not** have calls to `import`, `require`, `define` or any other importing mechanism. This can boost build performance when ignoring large libraries.\n\n```js\nnoParse: /jquery|lodash/\n```\n\n## `module.rules`\n\n`array`\n\nAn array of [Rules](#rule) which are matched to requests when modules are created. These rules can modify how the module is created. They can apply loaders to the module, or modify the parser.\n\n\n## Rule\n\nA Rule can be separated into three parts — Conditions, Results and nested Rules.\n\n### Rule conditions\n\nThere are two input values for the conditions:\n\n1. The resource: An absolute path to the file requested. It's already resolved according the [`resolve` rules](/configuration/resolve).\n\n2. The issuer: An absolute path to the file of the module which requested the resource. It's the location of the import.\n\n**Example:** When we `import \"./style.css\"` from `app.js`, the resource is `/path/to/style.css` and the issuer is `/path/to/app.js`.\n\nIn a Rule the properties [`test`](#rule-test), [`include`](#rule-include), [`exclude`](#rule-exclude) and [`resource`](#rule-resource) are matched with the resource and the property [`issuer`](#rule-issuer) is matched with the issuer.\n\nWhen using multiple conditions, all conditions must match.\n\n### Rule results\n\nRule results are used only when the Rule condition matches.\n\nThere are two output values of a Rule:\n\n1. Applied loaders: An array of loaders applied to the resource.\n\n2. Parser options: An options object which should be used to create the parser for this module.\n\nThese properties affect the loaders: [`loader`](#rule-loader), [`options`](#rule-options-rule-query), [`use`](#rule-use).\n\nFor compatibility also these properties: [`query`](#rule-options-rule-query), [`loaders`](#rule-loaders).\n\nThe [`enforce`](#rule-enforce) property affect the loader category. Whether it's an normal, pre- or post- loader.\n\nThe [`parser`](#rule-parser) property affect the parser options.\n\n\n## Nested rules\n\nNested rules can be specified under the properties [`rules`](#rule-rules) and [`oneOf`](#rule-oneof). \n\nThese rules are evaluated when the Rule condition matches.\n\n## `Rule.enforce`\n\nPossible values: `\"pre\" | \"post\"`\n\nSpecifies the category of the loader. No value means normal loader.\n\nThere is also an additional category \"inlined loader\" which are loaders applied inline of the import/require.\n\nAll loaders are sorted in the order `post, inline, normal, pre` and used in this order.\n\nAll normal loaders can be omitted (overridden) by prefixing `!` in the request.\n\nAll normal and pre loaders can be omitted (overridden) by prefixing `-!` in the request.\n\nAll normal, post and pre loaders can be omitted (overridden) by prefixing `!!` in the request.\n\nInline loaders and `!` prefixes should not be used as they are non-standard. They may be use by loader generated code.\n\n\n## `Rule.exclude`\n\n`Rule.exclude` is a shortcut to `Rule.resource.exclude`. See [`Rule.resource`](#rule-resource) and [`Condition.exclude`](#condition) for details.\n\n\n## `Rule.include`\n\n`Rule.include` is a shortcut to `Rule.resource.include`. See [`Rule.resource`](#rule-resource) and [`Condition.include`](#condition) for details.\n\n\n## `Rule.issuer`\n\nA [`Condition`](#condition) matched with the issuer. See details in [`Rule` conditions](#rule-conditions).\n\n\n## `Rule.loader`\n\n`Rule.loader` is a shortcut to `Rule.use: [ { loader } ]`. See [`Rule.use`](#rule-use) and [`UseEntry.loader`](#useentry) for details.\n\n\n## `Rule.loaders`\n\n`Rule.loaders` is an alias to `Rule.use`. See [`Rule.use`](#rule-use) for details.\n\nIt exists for compatibility reasons. Use `Rule.use` instead.\n\n\n## `Rule.oneOf`\n\nAn array of [`Rules`](#rule) from which only the first matching Rule is used when the Rule matches.\n\n\n## `Rule.options / Rule.query`\n\n`Rule.options` and `Rule.query` are shortcuts to `Rule.use: [ { options } ]`. See [`Rule.use`](#rule-use) and [`UseEntry.options`](#useentry) for details.\n\n`Rule.query` only exists for compatibility reasons. Use `Rule.options` instead.\n\n\n## `Rule.parser`\n\nAn object with parser options. All applied parser options are merged.\n\nFor each different parser options object a new parser is created and plugins can apply plugins depending on the parser options. Many of the default plugins apply their parser plugins only if a property in the parser options is not set or true.\n\n**Examples** (parser options by the default plugins):\n\n``` js-with-links\nparser: {\n  amd: false, // disable AMD\n  commonjs: false, // disable CommonJS\n  system: false, // disable SystemJS\n  harmony: false, // disable ES6 Harmony import/export\n  requireInclude: false, // disable require.include\n  requireEnsure: false, // disable require.ensure\n  requireContext: false, // disable require.context\n  browserify: false, // disable special handling of Browserify bundles\n  requireJs: false, // disable requirejs.*\n  node: false, // disable __dirname, __filename, module, require.extensions, require.main, etc.\n  node: {...} // reconfigure [node](/configuration/node) layer on module level\n}\n```\n\n\n## `Rule.resource`\n\nA [`Condition`](#condition) matched with the resource. See details in [`Rule` conditions](#rule-conditions).\n\n\n## `Rule.rules`\n\nAn array of [`Rules`](#rule) that is also used when the Rule matches.\n\n\n## `Rule.test`\n\n`Rule.test` is a shortcut to `Rule.resource.test`. See [`Rule.resource`](#rule-resource) and [`Condition.test`](#condition) for details.\n\n\n## `Rule.use`\n\nA list of [UseEntries](#useentry) which are applied to modules. Each entry specifies a loader to be used.\n\nPassing a string (i.e. `use: [ \"style-loader\" ]`) is a shortcut to the loader property (i.e. `use: [ { loader: \"style-loader \"} ]`).\n\nLoaders can be chained by passing multiple loaders, which will be applied from right to left (last to first configured).\n\n```javascript\nuse: [\n  {\n    loader: 'style-loader'\n  },\n  {\n    loader: 'css-loader',\n    options: {\n      importLoaders: 1\n    }\n  },\n  {\n    loader: 'less-loader',\n    options: {\n      noIeCompat: true\n    }\n  }\n]\n```\n\nSee [UseEntry](#useentry) for details.\n\n\n## `Condition`\n\nConditions can be one of these:\n\n* A string: To match the input must start with the provided string. I. e. an absolute directory path, or absolute path to the file.\n* A RegExp: It's tested with the input.\n* A function: It's called with the input and must return a truthy value to match.\n* An array of Conditions: At least one of the Condition must match.\n* A object: All properties must match. Each property has a defined behavior.\n\n`{ test: Condition }`: The Condition must match. The convention is the provide a RegExp or array of RegExps here, but it's not enforced.\n\n`{ include: Condition }`: The Condition must match. The convention is the provide a string or array of strings here, but it's not enforced.\n\n`{ exclude: Condition }`: The Condition must NOT match. The convention is the provide a string or array of strings here, but it's not enforced.\n\n`{ and: [Condition] }`: All Conditions must match.\n\n`{ or: [Condition] }`: Any Condition must match.\n\n`{ not: Condition }`: The Condition must NOT match.\n\n**Example:**\n\n``` js\n{\n  test: /\\.css$/,\n  include: [\n    path.resolve(__dirname, \"app/styles\"),\n    path.resolve(__dirname, \"vendor/styles\")\n  ]\n}\n```\n\n\n## `UseEntry`\n\n`object`\n\nIt must have a `loader` property being a string. It is resolved relative to the configuration [`context`](/configuration/entry-context#context) with the loader resolving options ([resolveLoader](/configuration/resolve#resolveloader)).\n\nIt can have a `options` property being a string or object. This value is passed to the loader, which should interpret it as loader options.\n\nFor compatibility a `query` property is also possible, which is an alias for the `options` property. Use the `options` property instead.\n\n**Example:**\n\n``` js\n{\n  loader: \"css-loader\",\n  options: {\n    modules: true\n  }\n}\n```\n\nNote that webpack need to generate an unique module identifier from resource and all loaders including options. It tries to do this with a `JSON.stringify` of the options object. This is fine in 99.9%, but may be not unique if you apply the same loaders with different options to the same resource and the options have some stringified values. It also breaks if the options object cannot be stringified (i. e. circular JSON). Because of this you can have a `ident` property in the options object which is used as unique identifier.\n\n\n## Module Contexts\n\n(Deprecated)\n\nThese options describe the default settings for the context created when a dynamic dependency is encountered.\n\nExample for an `unknown` dynamic dependency: `require`.\n\nExample for an `expr` dynamic dependency: `require(expr)`.\n\nExample for an `wrapped` dynamic dependency: `require(\"./templates/\" + expr)`.\n\nHere are the available options with their defaults:\n\n```js\nmodule: {\n  exprContextCritical: true,\n  exprContextRecursive: true,\n  exprContextRegExp: false,\n  exprContextRequest: \".\",\n  unknownContextCritical: true,\n  unknownContextRecursive: true,\n  unknownContextRegExp: false,\n  unknownContextRequest: \".\",\n  wrappedContextCritical: false\n  wrappedContextRecursive: true,\n  wrappedContextRegExp: /.*/,\n}\n```\n\nNote: You can use the `ContextReplacementPlugin` to modify these values for individual dependencies. This also removes the warning.\n\nA few use cases:\n\n* Warn for dynamic dependencies: `wrappedContextCritical: true`.\n* `require(expr)` should include the whole directory: `exprContextRegExp: /^\\.\\//`\n* `require(\"./templates/\" + expr)` should not include subdirectories by default: `wrappedContextRecursive: false`\n\n"
 	};
 
-/***/ },
-/* 227 */
-/***/ function(module, exports) {
+/***/ }),
+/* 231 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Node",
@@ -42054,9 +42794,9 @@ module.exports =
 		"__content": "\n\n## `node`\n\n`object`\n\nCustomize the NodeJS environment using polyfills or mocks:\n\n```js\nnode: {\n  console: false,\n  global: true,\n  process: true,\n  Buffer: true,\n  __filename: \"mock\",\n  __dirname: \"mock\",\n  setImmediate: true\n}\n```\n\n?> Elaborate on this section. What does \"mock\" or \"empty\" do? Does `<node builtin>` in the current documentation mean you can enable, disable, or polyfill any global Node.js function? (it seems `setImmediate` is the example for that)"
 	};
 
-/***/ },
-/* 228 */
-/***/ function(module, exports) {
+/***/ }),
+/* 232 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Other Options",
@@ -42069,9 +42809,9 @@ module.exports =
 		"__content": "\n\n?> These are all the other options that might not need an entire page. Either we need to create new pages for them, move them to an existing page, or keep an **Other Options** section like this and replace this TODO with a short description/lead-in paragraph.\n\n## `amd`\n\n`object`\n\nSet the value of `require.amd` or `define.amd`:\n\n```js\namd: {\n  jQuery: true\n}\n```\n\nCertain popular modules written for AMD, most notably jQuery versions 1.7.0 to 1.9.1, will only register as an AMD module if the loader indicates it has taken [special allowances](https://github.com/amdjs/amdjs-api/wiki/jQuery-and-AMD) for multiple versions being included on a page.\nThe allowances were the ability to restrict registrations to a specific version or to support different sandboxes with different defined modules.\n\nThis option allows you to set the key your module looks for to a truthy value.\nAs it happens, the AMD support in webpack ignores the defined name anyways.\n\n\n## `bail`\n\n`boolean`\n\nFail out on the first error instead of tolerating it. By default webpack will log these errors in red in the terminal, as well as the browser console when using HMR, but continue bundling. To enable it:\n\n```js\nbail: true\n```\n\nThis will force webpack to exit its bundling process.\n\n\n## `cache`\n\n`boolean` `object`\n\nCache the generated webpack modules and chunks to improve build speed. Caching is enabled by default while in watch mode. To disable caching simply pass:\n\n```js\ncache: false\n```\n\nIf an object is passed, webpack will use this object for caching. Keeping a reference to this object will allow one to share the same cache between compiler calls:\n\n```js\nlet SharedCache = {};\n\nexport default {\n  ...,\n  cache: SharedCache\n}\n```\n\nW> Don't share the cache between calls with different options.\n\n?> Elaborate on the warning and example - calls with different configuration options?\n\n## `loader`\n\n`object`\n\nExpose custom values into the loader context.\n\n?> Add an example...\n\n\n## `profile`\n\n`boolean`\n\nCapture a \"profile\" of the application, including statistics and hints, which can then be dissected using the [Analyze](https://webpack.github.io/analyse/) tool.\n\nT> Use the [StatsPlugin](https://www.npmjs.com/package/stats-webpack-plugin) for more control over the generated profile.\n\n\n## `recordsPath`\n\nDescription...\n\n?> Add example and description as well as details on `recordsInputPath` and `recordsOutputPath`.\n\n\n## `recordsInputPath`\n\nDescription...\n\n?> Add example and description as well as details on `recordsInputPath` and `recordsOutputPath`.\n\n\n## `recordsOutputPath`\n\nDescription...\n\n?> Add example and description as well as details on `recordsInputPath` and `recordsOutputPath`.\n"
 	};
 
-/***/ },
-/* 229 */
-/***/ function(module, exports) {
+/***/ }),
+/* 233 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Output",
@@ -42084,9 +42824,9 @@ module.exports =
 		"__content": "\n\nThe top-level `output` key contains set of options instructing webpack on how and where it should output your bundles, assets and anything else you bundle or load with webpack.\n\n\n## `output.chunkFilename`\n\n`string`\n\nThis option determines the name of on-demand loaded chunk files. See [`output.filename`](#output-filename) option for details on the possible values.\n\nNote that these filenames need to be generated at runtime to send the requests for chunks. Because of this, placeholders like `[name]` and `[chunkhash]` need to add a mapping from chunk id to placeholder value to the output bundle with the webpack runtime. This increases the size and may invalidate the bundle when placeholder value for any chunk changes.\n\nBy default `[id].js` is used or a value inferred from [`output.filename`](#output-filename) (`[name]` is replaced with `[id]` or `[id].` is prepended).\n\n\n## `output.crossOriginLoading`\n\n`boolean` `string`\n\nOnly used when [`target`](/configuration/target) is web, which uses JSONP for loading on-demand chunks, by adding script tags.\n\nEnable [cross-origin](https://developer.mozilla.org/en/docs/Web/HTML/Element/script#attr-crossorigin) loading of chunks. The following values are accepted...\n\n`crossOriginLoading: false` - Disable cross-origin loading (default)\n\n`crossOriginLoading: \"anonymous\"` - Enable cross-origin loading **without credentials**\n\n`crossOriginLoading: \"use-credentials\"` - Enable cross-origin loading **with credentials**\n\n\n## `output.devtoolFallbackModuleFilenameTemplate`\n\n`string | function(info)`\n\nA fallback used when the template string or function above yields duplicates.\n\nSee [`output.devtoolModuleFilenameTemplate`](#output-devtoolmodulefilenametemplate).\n\n\n## `output.devtoolLineToLine`\n\n`boolean | object`\n\n(Deprecated: Not really used, not really usable, write an issue if you have a other opinion)\n\nEnables line to line mapping for all or some modules. This produces a simple source map where each line of the generated source is mapped to the same line of the original source. This is a performance optimization and should only be used if all input lines match generated lines.\n\nPass a boolean to enable or disable this feature for all modules (defaults to `false`). An object with `test`, `include`, `exclude` is also allowed. For example, to enable this feature for all javascript files within a certain directory:\n\n``` js\ndevtoolLineToLine: { test: /\\.js$/, include: 'src/utilities' }\n```\n\n\n## `output.devtoolModuleFilenameTemplate`\n\n`string | function(info)`\n\nThis option is only used when [`devtool`](/configuration/devtool) uses an options which requires module names.\n\nCustomize the names used in each source map's `sources` array. This can be done by passing a template string or function. For example, when using `devtool: 'eval'`, this is the default:\n\n``` js\ndevtoolModuleFilenameTemplate: \"webpack:///[resource-path]?[loaders]\"\n```\n\nThe following substitutions are available in template strings:\n\n``` js\n[absolute-resource-path] // The absolute filename\n[all-loaders] // Automatic and explicit loaders and params up to the name of the first loader\n[hash] // The hash of the module identifier\n[id] // The module identifier\n[loaders] // Explicit loaders and params up to the name of the first loader\n[resource] // The path used to resolve the file and any query params used on the first loader\n[resource-path] // Same as above without the query params\n```\n\nWhen using a function, the same options are available camel-cased via the `info` parameter:\n\n``` js\ndevtoolModuleFilenameTemplate: info => {\n  return `webpack:///${info.resourcePath}?${info.loaders}`\n}\n```\n\nIf multiple modules would result in the same name, [`output.devtoolFallbackModuleFilenameTemplate`](#output-devtoolfallbackmodulefilenametemplate) is used instead for these modules.\n\n\n## `output.filename`\n\n`string`\n\nThis option determines the name of each output bundle. The bundle is written to the directory specified by the [`output.path`](#output-path) option.\n\nFor a single [`entry`](/configuration/entry-context#entry) point, this can be a static name.\n\n``` js\nfilename: \"bundle.js\"\n```\n\nHowever, when creating multiple bundles via more than one entry point, code splitting, or various plugins, you should use one of the following substitutions to give each bundle a unique name...\n\nUsing entry name:\n\n``` js\nfilename: \"[name].bundle.js\"\n```\n\nUsing internal chunk id:\n\n``` js\nfilename: \"[id].bundle.js\"\n```\n\nUsing the unique hash generated for every build:\n\n``` js\nfilename: \"[name].[hash].bundle.js\"\n```\n\nUsing hashes based on each chunks' content:\n\n``` js\nfilename: \"[chunkhash].bundle.js\"\n```\n\nMake sure the read the [Caching guide](/guides/caching) for details. There are more steps involved than just setting this option.\n\nThe default value is `\"[name].js\"`.\n\nNote this option is called filename but you are still allowed to something like `\"js/[name]/bundle.js\"` to create a folder structure.\n\nNote this options does not affect output files for on-demand-loaded chunks. For these files the [`output.chunkFilename`](#output-chunkfilename) option is used. It also doesn't affect files created by loaders. For these files see loader options.\n\n\n## `output.hotUpdateChunkFilename`\n\n`string`\n\nCustomize the filenames of hot update chunks. See [`output.filename`](#output-filename) option for details on the possible values.\n\nThe only placeholders allowed here are `[id]` and `[hash]`, the default being:\n\n``` js\nhotUpdateChunkFilename: \"[id].[hash].hot-update.js\"\n```\n\nHere is no need to change it.\n\n\n## `output.hotUpdateFunction`\n\n`function`\n\nOnly used when [`target`](/configuration/target) is web, which uses JSONP for loading hot updates.\n\nA JSONP function used to asynchronously load hot-update chunks.\n\nFor details see [`output.jsonpFunction`](#output-jsonpfunction).\n\n\n## `output.hotUpdateMainFilename`\n\n`string`\n\nCustomize the main hot update filename. See [`output.filename`](#output-filename) option for details on the possible values.\n\n`[hash]` is the only available placeholder, the default being:\n\n``` js\nhotUpdateMainFilename: \"[hash].hot-update.json\"\n```\n\nHere is no need to change it.\n\n\n## `output.jsonpFunction`\n\n`function`\n\nOnly used when [`target`](/configuration/target) is web, which uses JSONP for loading on-demand chunks.\n\nA JSONP function name used to asynchronously load chunks or join multiple initial chunks (CommonsChunkPlugin, AggressiveSplittingPlugin).\n\nThis needs to be changed if multiple webpack runtimes (from different compilation) are used on the same webpage.\n\nIf using the [`output.library`](#output-library) option, the library name is automatically appended.\n\n\n## `output.library`\n\n`string`\n\nRead the [library guide](/guides/author-libraries) for details.\n\nUse `library`, and `libraryTarget` below, when writing a JavaScript library that should export values, which can be used by other code depending on it. Pass a string with the name of the library:\n\n``` js\nlibrary: \"MyLibrary\"\n```\n\nThe name is used depending on the value of the [`output.libraryTarget`](#output-librarytarget) options.\n\nNote that `output.libraryTarget` defaults to `var`. This means if only `output.library` is used it is exported as variable declaration (when used as script tag it's available in the global scope after execution).\n\n\n## `output.libraryTarget`\n\n`string`\n\n> Default: `\"var\"`\n\nRead the [library guide](/guides/author-libraries) for details.\n\nConfigure how the library will be exposed. Any one of the following options can be used.\n\n> To give your library a name, set the `output.library` config to it (the examples assume `library: \"MyLibrary\"`)\n\nThe following options are supported:\n\n\n`libraryTarget: \"var\"` - (default) When your library is loaded, the **return value of your entry point** will be assigned to a variable:\n\n```javascript\nvar MyLibrary = _entry_return_;\n\n// your users will use your library like:\nMyLibrary.doSomething();\n```\n(Not specifying a `output.library` will cancel this var configuration)\n\n\n`libraryTarget: \"this\"` - When your library is loaded, the **return value of your entry point** will be assigned to this, the meaning of `this` is up to you:\n\n```javascript\nthis[\"MyLibrary\"] = _entry_return_;\n\n// your users will use your library like:\nthis.MyLibrary.doSomething();\nMyLibrary.doSomething(); //if this is window\n```\n\n\n`libraryTarget: \"commonjs\"` - When your library is loaded, the return value of your entry point will be part of the exports object. As the name implies, this is used in CommonJS environments:\n\n```javascript\nexports[\"MyLibrary\"] = _entry_return_;\n\n//your users will use your library like:\nrequire(\"MyLibrary\").doSomething();\n```\n\n`libraryTarget: \"commonjs2\"` - When your library is loaded, the return value of your entry point will be part of the exports object. As the name implies, this is used in CommonJS environments:\n\n```javascript\nmodule.exports = _entry_return_;\n\n//your users will use your library like:\nrequire(\"MyLibrary\").doSomething();\n```\n\n_Wondering the difference between CommonJS and CommonJS2? Check [this](https://github.com/webpack/webpack/issues/1114) out (they are pretty much the same)._\n\n\n`libraryTarget: \"commonjs-module\"` - Expose it using the `module.exports` object (`output.library` is ignored), `__esModule` is defined (it's threaded as ES2015 Module in interop mode)\n\n\n`libraryTarget: \"amd\"` - In this case webpack will make your library an AMD module.\n\nBut there is a very important pre-requisite, your entry chunk must be defined with the define property, if not, webpack will create the AMD module, but without dependencies. \nThe output will be something like this:\n\n```javascript\ndefine([], function() {\n\t//what this module returns is what your entry chunk returns\n});\n```\nBut if you download this script, first you may get a error: `define is not defined`, it’s ok! \nIf you are distributing your library with AMD, then your users need to use RequireJS to load it. \n\nNow that you have RequireJS loaded, you can load your library.\n\nBut, `require([ _what?_ ])`? \n\n`output.library`!\n\n```javascript\noutput: {\n\tlibrary: \"MyLibrary\",\n\tlibraryTarget: \"amd\"\n}\n```\n\nSo your module will be like:\n\n```javascript\ndefine(\"MyLibrary\", [], function() {\n\t//what this module returns is what your entry chunk returns\n});\n```\n\nAnd you can use it like this:\n\n```javascript\n// And then your users will be able to do:\nrequire([\"MyLibrary\"], function(MyLibrary){\n\tMyLibrary.doSomething();\n});\n```\n\n`libraryTarget: \"umd\"` - This is a way for your library to work with all the module definitions (and where aren't modules at all). \nIt will work with CommonJS, AMD and as global variable. You can check the [UMD Repository](https://github.com/umdjs/umd) to know more about it. \n\nIn this case, you need the another property to name your module:\n\n```javascript\noutput: {\n\tlibrary: \"MyLibrary\",\n\tlibraryTarget: \"umd\"\n}\n```\n\nAnd finally the output is:\n```javascript\n(function webpackUniversalModuleDefinition(root, factory) {\n\tif(typeof exports === 'object' && typeof module === 'object')\n\t\tmodule.exports = factory();\n\telse if(typeof define === 'function' && define.amd)\n\t\tdefine(\"MyLibrary\", [], factory);\n\telse if(typeof exports === 'object')\n\t\texports[\"MyLibrary\"] = factory();\n\telse\n\t\troot[\"MyLibrary\"] = factory();\n})(this, function() {\n\t//what this module returns is what your entry chunk returns\n});\n```\n\nModule proof library.\n\nThe dependencies for your library will be defined by the [`externals`](/configuration/externals/) config.\n\n\n## `output.path`\n\n`string`\n\nThe output directory as an **absolute** path.\n\n```js\npath: path.resolve(__dirname, 'dist/assets')\n```\n\nNote that `[hash]` in this parameter will be replaced with an hash of the compilation. See the [Caching guide](/guides/caching) for details.\n\n\n## `output.pathinfo`\n\n`boolean`\n\nTell webpack to include comments in bundles with information about the contained modules. This option defaults to `false` and **should not** be used in production, but it's very useful in development when reading the generated code.\n\n``` js\npathinfo: true\n```\n\nNote it also adds some info about tree shaking to the generated bundle.\n\n\n## `output.publicPath`\n\n`string`\n\nThis is an important option when using on-demand-loading or loading external resources like images, files, etc. If an incorrect value is specified you'll receive 404 errors while loading these resources.\n\nThis option specifies the **public URL** of the output directory when referenced in a browser. A relative URL is resolved relative to the HTML page (or `<base>` tag). Server-relative URLs, protocol-relative URLs or absolute URLs are also possible and sometimes required, i. e. when hosting assets on a CDN.\n\nThe value of the option is prefixed to every URL created by the runtime or loaders. Because of this **the value of this option ends with `/`** in most cases.\n\nThe default value is an empty string `\"\"`.\n\nSimple rule: The URL of your [`output.path`](#output-path) from the view of the HTML page.\n\n```js\npath: path.resolve(__dirname, \"public/assets\"),\npublicPath: \"https://cdn.example.com/assets/\"\n```\n\nFor this configuration:\n\n```js\npublicPath: \"/assets/\",\nchunkFilename: \"[id].chunk.js\"\n```\n\nA request to a chunk will look like `/assets/4.chunk.js`.\n\nA loader outputting HTML might emit something like this:\n\n```html\n<link href=\"/assets/spinner.gif\" />\n```\n\nor when loading an image in CSS:\n\n```css\nbackground-image: url(/assets/spinner.gif);\n```\n\nThe webpack-dev-server also takes a hint from `publicPath`, using it to determine where to serve the output files from.\n\nNote that `[hash]` in this parameter will be replaced with an hash of the compilation. See the [Caching guide](/guides/caching) for details.\n\nExamples:\n\n``` js\npublicPath: \"https://cdn.example.com/assets/\", // CDN (always HTTPS)\npublicPath: \"//cdn.example.com/assets/\", // CDN (same protocol)\npublicPath: \"/assets/\", // server-relative\npublicPath: \"assets/\", // relative to HTML page\npublicPath: \"../assets/\", // relative to HTML page\npublicPath: \"\", // relative to HTML page (same directory)\n```\n\n\n## `output.sourceMapFilename`\n\n`string`\n\nThis option is only used when [`devtool`](/configuration/devtool) uses a SourceMap option which writes an output file.\n\nConfigure how source maps are named. By default `\"[file].map\"` is used.\n\nTechnically the `[name]`, `[id]`, `[hash]` and `[chunkhash]` [placeholders](#output-filename) can be used, if generating a SourceMap for chunks. In addition to that the `[file]` placeholder is replaced with the filename of the original file. It's recommended to only use the `[file]` placeholder, as the other placeholders won't work when generating SourceMaps for non-chunk files. Best leave the default.\n\n\n## `output.sourcePrefix`\n\n`string`\n\nChange the prefix for each line in the output bundles.\n\n``` js\nsourcePrefix: \"\\t\"\n```\n\nNote by default an empty string is used. Using some kind of indention makes bundles look more pretty, but will cause issues with multi-line string.\n\nThere is no need to change it.\n\n\n## `output.umdNamedDefine`\n\n`boolean`\n\nWhen using `libraryTarget: \"umd\"`, setting:\n\n``` js\numdNamedDefine: true\n```\n\nwill name the AMD module of the UMD build. Otherwise an anonymous `define` is used.\n"
 	};
 
-/***/ },
-/* 230 */
-/***/ function(module, exports) {
+/***/ }),
+/* 234 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Passing a Configuration",
@@ -42098,9 +42838,9 @@ module.exports =
 		"__content": "\n\n...\n\n?> exporting a function and --env\n\n?> returning a Promise\n\n?> exporting multiple configurations"
 	};
 
-/***/ },
-/* 231 */
-/***/ function(module, exports) {
+/***/ }),
+/* 235 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Performance",
@@ -42111,9 +42851,9 @@ module.exports =
 		"__content": "\n\nThese options allows you to control how webpack notifies you of assets and entrypoints that exceed a specific file limit. \nThis feature was inspired by the idea of [webpack Performance Budgets](https://github.com/webpack/webpack/issues/3216).\n\n## `performance`\n\n`object`\n\nConfigure how performance hints are shown. For example if you have an asset that is over 250kb, webpack will emit a warning notifiying you of this.\n\n\n## `performance.hints`\n\n`boolean | \"error\" | \"warning\"`\n\nTurns hints on/off. In addition, tells webpack to throw either an error or a warning when hints are found. This property is set to `\"warning\"` by default.\n\nGiven an asset is created that is over 250kb:\n\n```js\nperformance: {\n  hints: false\n}\n```\n\nNo hint warnings or errors are shown.\n\n```js\nperformance: {\n  hints: \"warning\"\n}\n```\n\nA warning will be displayed notifying you of a large asset. We recommend something like this for development environments.\n\n```js\nperformance: {\n  hints: \"error\"\n}\n```\n\nAn error will be displayed notifying you of a large asset. We recommend using `hints: \"error\"` during production builds to help prevent deploying production bundles that are too large, impacting webpage performance. \n\n## `performance.maxEntrypointSize`\n\n`int`\n\nAn entrypoint represents all assets that would be utilized during initial load time for a specific entry. This option controls when webpack should emit performance hints based on the maximum entrypoint size. The default value is `250000` (bytes).\n\n```js\nperformance: {\n  maxEntrypointSize: 400000\n}\n```\n\n## `performance.maxAssetSize`\n\n`int`\n\nAn asset is any emitted file from webpack. This option controls when webpack emits a performance hint based on individual asset size. The default value is `250000` (bytes).\n\n\n```js\nperformance: {\n  maxAssetSize: 100000\n}\n```\n\n## `performance.assetFilter`\n\n`Function`\n\nThis property allows webpack to control what files are used to calculate performance hints. The default function is seen below: \n\n```js\nfunction(assetFilename) {\n\treturn !(/\\.map$/.test(assetFilename))\n};\n```\n\nYou can override this property by passing your own function in: \n\n```js \nperformance: {\n  assetFilter: function(assetFilename) {\n    return assetFilename.endsWith('.js');\n  }\n}\n```\n\nThe example above will only give you performance hints based on `.js` files.\n"
 	};
 
-/***/ },
-/* 232 */
-/***/ function(module, exports) {
+/***/ }),
+/* 236 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Plugins",
@@ -42125,9 +42865,9 @@ module.exports =
 		"__content": "\n\n?> `plugins` customize the webpack build process in a variety of ways. This page discusses using existing plugins, however if you are interested in writing your own please visit Writing a Plugin.\n\n## `plugins`\n\n`array`\n\nA list of webpack plugins. For example, when multiple bundles share some of the same dependencies, the `CommonsChunkPlugin` could be useful to extract those dependencies into a shared bundle to avoid duplication. This could be added like so:\n\n```js\nplugins: [\n  new webpack.optimize.CommonsChunkPlugin({\n    ...\n  })\n]\n```\n\nA more complex example, using multiple plugins, might look something like this:\n\n?> Add a more detailed example\n"
 	};
 
-/***/ },
-/* 233 */
-/***/ function(module, exports) {
+/***/ }),
+/* 237 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Resolve",
@@ -42142,9 +42882,9 @@ module.exports =
 		"__content": "\n\nThese options change how modules are resolved. webpack provides reasonable defaults, but it is possible to change the resolving in detail.\nHave a look at [Module Resolution](/concepts/module-resolution) for more explanation of how the resolver works.\n\n## `resolve`\n\n`object`\n\nConfigure how modules are resolved. For example, when calling `import \"lodash\"` in ES2015, the `resolve` options can change where webpack goes to look for `\"lodash\"` (see [`modules`](#resolve-modules)).\n\n## `resolve.alias`\n\n`object`\n\nCreate aliases to `import` or `require` certain modules more easily. For example, to alias a bunch of commonly used `src/` folders:\n\n```js\nalias: {\n  Utilities: path.resolve(__dirname, 'src/utilities/'),\n  Templates: path.resolve(__dirname, 'src/templates/')\n}\n```\n\nNow, instead of using relative paths when importing like so:\n\n```js\nimport Utility from '../../utilities/utility';\n```\n\nyou can use the alias:\n\n```js\nimport Utility from 'Utilities/utility';\n```\n\nA trailing `$` can also be added to the given object's keys to signify an exact match:\n\n```js\nalias: {\n  xyz$: path.resolve(__dirname, 'path/to/file.js')\n}\n```\n\nwhich would yield these results:\n\n```js\nimport Test1 from 'xyz'; // Success, file.js is resolved and imported\nimport Test2 from 'xyz/file.js'; // Error, /path/to/file.js/file.js is invalid\n```\n\nThe following table explains a lot more cases:\n\n| `alias:` | `import \"xyz\"` | `import \"xyz/file.js\"` |\n| -------- | ---------------- | -------------------------|\n| `{}` | `/abc/node_modules/xyz/index.js` | `/abc/node_modules/xyz/file.js` |\n| `{ xyz: \"/abs/path/to/file.js\" }` | `/abs/path/to/file.js` | error |\n| `{ xyz$: \"/abs/path/to/file.js\" }` | `/abs/path/to/file.js` | `/abc/node_modules/xyz/file.js` |\n| `{ xyz: \"./dir/file.js\" }` | `/abc/dir/file.js` | error |\n| `{ xyz$: \"./dir/file.js\" }` | `/abc/dir/file.js` | `/abc/node_modules/xyz/file.js` |\n| `{ xyz: \"/some/dir\" }` | `/some/dir/index.js` | `/some/dir/file.js` |\n| `{ xyz$: \"/some/dir\" }` | `/some/dir/index.js` | `/abc/node_modules/xyz/file.js` |\n| `{ xyz: \"./dir\" }` | `/abc/dir/index.js` | `/abc/dir/file.js` |\n| `{ xyz: \"modu\" }` | `/abc/node_modules/modu/index.js` | `/abc/node_modules/modu/file.js` |\n| `{ xyz$: \"modu\" }` | `/abc/node_modules/modu/index.js` | `/abc/node_modules/xyz/file.js` |\n| `{ xyz: \"modu/some/file.js\" }` | `/abc/node_modules/modu/some/file.js` | error |\n| `{ xyz: \"modu/dir\" }` | `/abc/node_modules/modu/dir/index.js` | `/abc/node_modules/dir/file.js` |\n| `{ xyz: \"xyz/dir\" }` | `/abc/node_modules/xyz/dir/index.js` | `/abc/node_modules/xyz/dir/file.js` |\n| `{ xyz$: \"xyz/dir\" }` | `/abc/node_modules/xyz/dir/index.js` | `/abc/node_modules/xyz/file.js` |\n\n`index.js` may resolve to another file if defined in the `package.json`.\n\n`/abc/node_modules` may resolve in `/node_modules` too.\n\n\n## `resolve.aliasFields`\n\n`string`\n\nSpecify a field, such as `browser`, to be parsed according to [this specification](https://github.com/defunctzombie/package-browser-field-spec). Default:\n\n```js\naliasFields: [\"browser\"]\n```\n\n\n## `resolve.descriptionFiles`\n\n`array`\n\nThe JSON files to use for descriptions. Default:\n\n```js\ndescriptionFiles: [\"package.json\"]\n```\n\n\n## `resolve.enforceExtension`\n\n`boolean`\n\nIf `true`, it will not allow extension-less files. So by default `require('./foo')` works if `./foo` has a `.js` extension, but with this enabled only `require('./foo.js')` will work. Default:\n\n```js\nenforceExtension: false\n```\n\n\n## `resolve.enforceModuleExtension`\n\n`boolean`\n\nWhether to require to use an extension for modules (e.g. loaders). Default:\n\n```js\nenforceModuleExtension: false\n```\n\n\n## `resolve.extensions`\n\n`array`\n\nAutomatically resolve certain extensions. This defaults to:\n\n```js\nextensions: [\".js\", \".json\"]\n```\n\nwhich is what enables users to leave off the extension when importing:\n\n```js\nimport File from '../path/to/file'\n```\n\nW> Using this will **override the default array**, meaning that webpack will no longer try to resolve modules using the default extensions. For modules that are imported with their extension, e.g. `import SomeFile from \"./somefile.ext\"`, to be properly resolved, a string containing \"\\*\" must be included in the array.\n\n\n## `resolve.mainFields`\n\n`array`\n\nWhen importing from an npm package, e.g. `import * as D3 from \"d3\"`, this option will determine which fields in it's `package.json` are checked. The default values will vary based upon the [`target`](/concepts/targets) specified in your webpack configuration.\n\nWhen the `target` property is set to `webworker`, `web`, or left unspecified:\n\n\n```js\nmainFields: [\"browser\", \"module\", \"main\"]\n```\n\nFor any other target (including `node`):\n\n```js\nmainFields: [\"module\", \"main\"]\n```\n\nFor example, the `package.json` of [D3](https://d3js.org/) contains these fields:\n\n```js\n{\n  ...\n  main: 'build/d3.Node.js',\n  browser: 'build/d3.js',\n  module: 'index',\n  ...\n}\n```\n\nThis means that when we `import * as D3 from \"d3\"` this will really resolve to the file in the `browser` property. The `browser` property takes precedence here because it's the first item in `mainFields`. Meanwhile, a Node.js application bundled by webpack will resolve by default to the file in the `module` field.\n\n\n## `resolve.mainFiles`\n\n`array`\n\nThe filename to be used while resolving directories. Default:\n\n```js\nmainFiles: [\"index\"]\n```\n\n\n## `resolve.modules`\n\n`array`\n\nTell webpack what directories should be searched when resolving modules.\n\nAbsolute and relative paths can both be used, but be aware that they will behave a bit differently.\n\nA relative path will be scanned simarly to how Node scans for `node_modules`, by looking through the current directory as well as it's ancestors (i.e. `./node_modules`, `../node_modules`, and on).\n\nWith an absolute path, it will only search in the given directory.\n\n`resolve.modules` defaults to:\n\n```js\nmodules: [\"node_modules\"]\n```\n\nIf you want to add a directory to search in that takes precedences over `node_modules/`:\n\n```js\nmodules: [path.resolve(__dirname, \"src\"), \"node_modules\"]\n```\n\n\n## `resolve.unsafeCache`\n\n`regex` `array` `boolean`\n\nEnable aggressive, but **unsafe**, caching of modules. Passing `true` will cache everything. Default:\n\n```js\nunsafeCache: true\n```\n\nA regular expression, or an array of regular expressions, can be used to test file paths and only cache certain modules. For example, to only cache utilities:\n\n```js\nunsafeCache: /src\\/utilities/\n```\n\nW> Changes to cached paths may cause failure in rare cases.\n\n\n## `resolveLoader`\n\n`object`\n\nThis set of options is identical to the `resolve` property set above, but is used only to resolve webpack's [loader](/concepts/loaders) packages. Default:\n\n```js\n{\n    modules: [\"web_loaders\", \"web_modules\", \"node_loaders\", \"node_modules\"],\n    extensions: [\"\", \".webpack-loader.js\", \".web-loader.js\", \".loader.js\", \".js\"],\n    packageMains: [\"webpackLoader\", \"webLoader\", \"loader\", \"main\"]\n}\n```\n\nT> Note that you can use alias here and other features familiar from resolve. For example `{ txt: 'raw-loader' }` would shim `txt!templates/demo.txt` to use `raw-loader`.\n\n\n## `resolveLoader.moduleExtensions`\n\n`array`\n\nThe extensions which are tried when resolving a module (e.g. loaders). By default this is an empty array.\n\nIf you want to use loaders without the `-loader` suffix, you can use this:\n\n```js\nmoduleExtensions: ['-loader']\n```\n\n\n## `resolve.plugins`\n\nA list of additional resolve plugins which should be applied. It allows plugins such as [`DirectoryNamedWebpackPlugin`](https://www.npmjs.com/package/directory-named-webpack-plugin).\n\n```js\nplugins: [new DirectoryNamedWebpackPlugin()]\n```\n\n\n## `resolve.symlinks`\n\n`boolean`\n\nWhether to resolve symlinks to their symlinked location. Default:\n\n```js\nsymlinks: true\n```\n\n\n## `resolve.cachePredicate`\n\n`function`\n\nA function which decides whether a request should be cached or not. An object is passed to the function with `path` and `request` properties. Default:\n\n```js\ncachePredicate: function() { return true }\n```\n"
 	};
 
-/***/ },
-/* 234 */
-/***/ function(module, exports) {
+/***/ }),
+/* 238 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Stats",
@@ -42156,9 +42896,9 @@ module.exports =
 		"__content": "\n\nThe `stats` option lets you precisely control what bundle information gets displayed. This can be a nice middle ground if you don't want to use `quiet` or `noInfo` because you want some bundle information, but not all of it.\n\nT> For webpack-dev-server, this property needs to be in the `devServer` object.\n\nW> This option does not have any effect when using the Node.js API.\n\n## `stats`\n\n`object` `string`\n\nThere are some presets available to use as a shortcut. Use them like this:\n\n```js\nstats: \"errors-only\"\n```\n\n| Preset | Alternative | Description |\n|--------|-------------|-------------|\n| `\"errors-only\"` | *none*  | Only output when errors happen |\n| `\"minimal\"`     | *none*  | Only output when errors or new compilation happen |\n| `\"none\"`        | `false` | Output nothing |\n| `\"normal\"`      | `true`  | Standard output |\n| `\"verbose\"`     | *none*  | Output everything |\n\nFor more granular control, it is possible to specify exactly what information you want. Please note that all of the options in this object are optional.\n\n``` js\nstats: {\n  // Add asset Information\n  assets: true,\n  // Sort assets by a field\n  assetsSort: \"field\",\n  // Add information about cached (not built) modules\n  cached: true,\n  // Add children information\n  children: true,\n  // Add chunk information (setting this to `false` allows for a less verbose output)\n  chunks: true,\n  // Add built modules information to chunk information\n  chunkModules: true,\n  // Add the origins of chunks and chunk merging info\n  chunkOrigins: true,\n  // Sort the chunks by a field\n  chunksSort: \"field\",\n  // Context directory for request shortening\n  context: \"../src/\",\n  // Add errors\n  errors: true,\n  // Add details to errors (like resolving log)\n  errorDetails: true,\n  // Add the hash of the compilation\n  hash: true,\n  // Add built modules information\n  modules: true,\n  // Sort the modules by a field\n  modulesSort: \"field\",\n  // Add public path information\n  publicPath: true,\n  // Add information about the reasons why modules are included\n  reasons: true,\n  // Add the source code of modules\n  source: true,\n  // Add timing information\n  timings: true,\n  // Add webpack version information\n  version: true,\n  // Add warnings\n  warnings: true\n};\n```\n"
 	};
 
-/***/ },
-/* 235 */
-/***/ function(module, exports) {
+/***/ }),
+/* 239 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Target",
@@ -42173,9 +42913,9 @@ module.exports =
 		"__content": "\n\nwebpack can compile for multiple environments or _targets_. To understand what a target is in detail, read [the concepts](/concepts/targets).\n\n## `target`\n\n`string`\n\nTells webpack which environment the application is targeting. The following values are supported:\n\n| `target`      | Description            |\n| ------------- |------------------------|\n| `async-node`| Compile for usage in a Node.js-like environment (uses `fs` and `vm` to load chunks asynchronously)    |\n| `electron`      | Compile for [Electron](http://electron.atom.io/) renderer process, provide a target using `JsonpTemplatePlugin`, `FunctionModulePlugin` for browser environments and `NodeTargetPlugin` and `ExternalsPlugin` for CommonJS and Electron built-in modules. |\n| `electron-renderer` | Compile for [Electron](http://electron.atom.io/) for `renderer-process` |\n| `node` | Compile for usage in a Node.js-like environment (uses Node.js `require` to load chunks) |\n|`node-webkit`|  Compile for usage in WebKit and uses JSONP for chunk loading. Allows importing of built-in Node.js modules and [`nw.gui`](http://docs.nwjs.io/en/latest/) (experimental) |\n|`web`| Compile for usage in a browser-like environment **(default)** |\n|`webworker`| Compile as WebWorker |\n\nFor example, when the `target` is set to `\"electron\"`, webpack includes multiple electron specific variables. For more information on which templates and externals are used, you can refer to webpack's [source code](https://github.com/webpack/webpack/blob/master/lib/WebpackOptionsApply.js#L70-L185).\n"
 	};
 
-/***/ },
-/* 236 */
-/***/ function(module, exports) {
+/***/ }),
+/* 240 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Watch and WatchOptions",
@@ -42188,18 +42928,18 @@ module.exports =
 		"__content": "\n\nwebpack can watch files and recompile whenever they change. This page explains how to enable this and a couple of tweaks you can make if watching does not properly for you.\n\n## `watch`\n\n`boolean`\n\nTurn on watch mode. This means that after the initial build, webpack will continue to watch for changes in any of the resolved files. Watch mode is turned off by default:\n\n```js\nwatch: false\n```\n\nT> In webpack-dev-server and webpack-dev-middleware watch mode is enabled by default.\n\n## `watchOptions`\n\n`object`\n\nA set of options used to customize watch mode:\n\n```js\nwatchOptions: {\n  aggregateTimeout: 300,\n  poll: 1000\n}\n```\n\n## `watchOptions.aggregateTimeout`\n\n`number`\n\nAdd a delay before rebuilding once the first file changed. This allows webpack to aggregate any other changes made during this time period into one rebuild. Pass a value in milliseconds:\n\n```js\naggregateTimeout: 300 // The default\n```\n\n## `watchOptions.ignored`\n\nFor some systems, watching many file systems can result in a lot of CPU or memory usage. It is possible to exclude a huge folder like `node_modules`:\n\n```js\nignored: /node_modules/\n```\n\nIt is also possible to use [anymatch](https://github.com/es128/anymatch) patterns:\n\n```js\nignored: \"files/**/*.js\"\n```\n\n## `watchOptions.poll`\n\n`boolean` `number`\n\nTurn on [polling](http://whatis.techtarget.com/definition/polling) by passing `true`, or specifying a poll interval in milliseconds:\n\n```js\npoll: 1000 // Check for changes every second\n```\n\nT> If watching does not work for you, try out this option. Watching does not work with NFS and machines in VirtualBox.\n\n"
 	};
 
-/***/ },
-/* 237 */
-/***/ function(module, exports) {
+/***/ }),
+/* 241 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Contribute",
 		"__content": "\n\n> How to contribute to the project? List ways/means here.\n\n## Documentation\n\n[Writer's guide](/writers-guide)\n\n## Technical Contribution\n\n[Development guide](/development)\n\n## Donation\n\n[Open Collective](https://opencollective.com/webpack)\n"
 	};
 
-/***/ },
-/* 238 */
-/***/ function(module, exports) {
+/***/ }),
+/* 242 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "How to write a loader?",
@@ -42207,9 +42947,9 @@ module.exports =
 		"__content": "\n\nA loader is a node module exporting a `function`.\n\nThis function is called when a resource should be transformed by this loader.\n\nIn the simple case, when only a single loader is applied to the resource, the loader is called with one parameter: the content of the resource file as string.\n\nThe loader can access the [[loader API | loaders]] on the `this` context in the function.\n\nA sync loader that only wants to give a one value can simply `return` it. In every other case the loader can give back any number of values with the `this.callback(err, values...)` function. Errors are passed to the `this.callback` function or thrown in a sync loader.\n\nThe loader is expected to give back one or two values. The first value is a resulting JavaScript code as string or buffer. The second optional value is a SourceMap as JavaScript object.\n\nIn the complex case, when multiple loaders are chained, only the last loader gets the resource file and only the first loader is expected to give back one or two values (JavaScript and SourceMap). Values that any other loader give back are passed to the previous loader.\n\n## Examples\n\n``` javascript\n// Identity loader\nmodule.exports = function(source) {\n  return source;\n};\n```\n\n``` javascript\n// Identity loader with SourceMap support\nmodule.exports = function(source, map) {\n  this.callback(null, source, map);\n};\n```\n\n## Guidelines\n\n(Ordered by priority, first one should get the highest priority)\n\n* Loaders should do only a single task\n* Loaders can be chained. Create loaders for every step, instead of a loader that does everything at once.\n\nThis also means they should not convert to JavaScript if not necessary.\n\nExample: Render HTML from a template file by applying the query parameters\n\nI could write a loader that compiles the template from source, execute it and return a module that exports a string containing the HTML code. This is bad.\n\nInstead I should write loaders for every task in this use case and apply them all (pipeline):\n\n* jade-loader: Convert template to a module that exports a function.\n* apply-loader: Takes a function exporting module and returns raw result by applying query parameters.\n* html-loader: Takes HTML and exports a string exporting module.\n\n### Generate modules that are modular\n\nLoader generated modules should respect the same design principles like normal modules.\n\nExample: That's a bad design: (not modular, global state, ...)\n\n```javascript\nrequire(\"any-template-language-loader!./xyz.atl\");\n\nvar html = anyTemplateLanguage.render(\"xyz\");\n```\n\n### Flag itself cacheable if possible\n\nMost loaders are cacheable, so they should flag itself as cacheable.\n\nJust call `cacheable` in the loader.\n\n```javascript\n// Cacheable identity loader\nmodule.exports = function(source) {\n  this.cacheable();\n  return source;\n};\n```\n\n### Do not keep state between runs and modules\n\nA loader should be independent of other modules compiled (expect of these issued by the loader).\n\nA loader should be independent of previous compilations of the same module.\n\n### Mark dependencies\n\nIf a loader uses external resources (i. e. by reading from filesystem), they **must** tell about that. This information is used to invalidate cacheable loaders and recompile in watch mode.\n\n``` javascript\n// Loader adding a header\nvar path = require(\"path\");\nmodule.exports = function(source) {\n  this.cacheable();\n  var callback = this.async();\n  var headerPath = path.resolve(\"header.js\");\n  this.addDependency(headerPath);\n  fs.readFile(headerPath, \"utf-8\", function(err, header) {\n    if(err) return callback(err);\n    callback(null, header + \"\\n\" + source);\n  });\n};\n```\n\n### Resolve dependencies\n\nIn many languages there is some schema to specify dependencies. i. e. in css there is `@import` and `url(...)`. These dependencies should be resolved by the module system.\n\nThere are two options to do this:\n\n* Transform them to `require`s.\n* Use the `this.resolve` function to resolve the path\n\nExample 1 css-loader: The css-loader transform dependencies to `require`s, by replacing `@import`s with a require to the other stylesheet (processed with the css-loader too) and `url(...)` with a `require` to the referenced file.\n\nExample 2 less-loader: The less-loader cannot transform `@import`s to `require`s, because all less files need to be compiled in one pass to track variables and mixins. Therefore the less-loader extends the less compiler with a custom path resolving logic. This custom logic uses `this.resolve` to resolve the file with the configuration of the module system (aliasing, custom module directories, etc.).\n\nIf the language only accept relative urls (like css: `url(file)` always means `./file`), there is the `~`-convention to specify references to modules:\n\n``` text\nurl(file) -> require(\"./file\")\nurl(~module) -> require(\"module\")\n```\n\n### Extract common code\n\nDon't generate much code that is common in every module processed by that loader. Create a (runtime) file in the loader and generate a `require` to that common code.\n\n## Do not embed absolute paths\n\nDon't put absolute paths in to the module code. They break hashing when the root for the project is moved. There is a method [`stringifyRequest` in loader-utils](https://github.com/webpack/loader-utils#stringifyrequest) which converts an absolute path to an relative one.\n\n**Example:**\n\n``` js\nvar loaderUtils = require(\"loader-utils\");\n\nreturn \"var runtime = require(\" +\n  loaderUtils.stringifyRequest(this, \"!\" + require.resolve(\"module/runtime\")) +\n  \");\";\n```\n\n### Use a library as `peerDependencies` when they wrap it\n\nusing a peerDependency allows the application developer to specify the exact version in `package.json` if desired. The dependency should be relatively open to allow updating the library without needing to publish a new loader version.\n\n``` javascript\n\"peerDependencies\": {\n  \"library\": \"^1.3.5\"\n}\n```\n\n### Programmable objects as `query`-option\n\nthere are situations where your loader requires programmable objects with functions which cannot stringified as `query`-string. The less-loader, for example, provides the possibility to specify [LESS-plugins](https://github.com/webpack/less-loader#less-plugins). In these cases, a loader is allowed to extend webpack's `options`-object to retrieve that specific option. In order to avoid name collisions, however, it is important that the option is namespaced under the loader's camelCased npm-name.\n\n**Example:**\n\n```javascript\n// webpack.config.js\nmodule.exports = {\n  ...\n  lessLoader: {\n    lessPlugins: [\n      new LessPluginCleanCSS({advanced: true})\n    ]\n  }\n};\n```\n\nThe loader should also allow to specify the config-key (e.g. `lessLoader`) via `query`. See [discussion](https://github.com/webpack/less-loader/pull/40) and [example implementation](https://github.com/webpack/less-loader/blob/39f742b4624fceae6d9cf266e9554d07a32a9c14/index.js#L49-51).\n"
 	};
 
-/***/ },
-/* 239 */
-/***/ function(module, exports) {
+/***/ }),
+/* 243 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "How to write a plugin?",
@@ -42217,18 +42957,18 @@ module.exports =
 		"__content": "\n\nPlugins expose the full potential of the webpack engine to third-party developers. Using staged build callbacks, developers can introduce their own behaviors into the webpack build process. Building plugins is a bit more advanced than building loaders, because you'll need to understand some of the webpack low-level internals to hook into them. Be prepared to read some source code!\n\n## Compiler and Compilation\n\nAmong the two most important resources while developing plugins are the `compiler` and `compilation` objects. Understanding their roles is an important first step in extending the webpack engine.\n\n- The `compiler` object represents the fully configured webpack environment. This object is built once upon starting webpack, and is configured with all operational settings including options, loaders, and plugins. When applying a plugin to the webpack environment, the plugin will receive a reference to this compiler. Use the compiler to access the main webpack environment.\n\n- A `compilation` object represents a single build of versioned assets. While running webpack development middleware, a new compilation will be created each time a file change is detected, thus generating a new set of compiled assets. A compilation surfaces information about the present state of module resources, compiled assets, changed files, and watched dependencies. The compilation also provides many callback points at which a plugin may choose to perform custom actions.\n\nThese two components are an integral part of any webpack plugin (especially a `compilation`), so developers will benefit by familiarizing themselves with these source files:\n\n- [Compiler Source](https://github.com/webpack/webpack/blob/master/lib/Compiler.js)\n- [Compilation Source](https://github.com/webpack/webpack/blob/master/lib/Compilation.js)\n\n## Basic plugin architecture\n\nPlugins are instanceable objects with an `apply` method on their prototype. This `apply` method is called once by the webpack compiler while installing the plugin. The `apply` method is given a reference to the underlying webpack compiler, which grants access to compiler callbacks. A simple plugin is structured as follows:\n\n```javascript\nfunction HelloWorldPlugin(options) {\n  // Setup the plugin instance with options...\n}\n\nHelloWorldPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('done', function() {\n    console.log('Hello World!');\n  });\n};\n\nmodule.exports = HelloWorldPlugin;\n```\n\nThen to install the plugin, just include an instance in your webpack config `plugins` array:\n\n```javascript\nvar HelloWorldPlugin = require('hello-world');\n\nvar webpackConfig = {\n  // ... config settings here ...\n  plugins: [\n    new HelloWorldPlugin({options: true})\n  ]\n};\n```\n\n## Accessing the compilation\n\nUsing the compiler object, you may bind callbacks that provide a reference to each new compilation. These compilations provide callbacks for hooking into numerous steps within the build process.\n\n```javascript\nfunction HelloCompilationPlugin(options) {}\n\nHelloCompilationPlugin.prototype.apply = function(compiler) {\n\n  // Setup callback for accessing a compilation:\n  compiler.plugin(\"compilation\", function(compilation) {\n\n    // Now setup callbacks for accessing compilation steps:\n    compilation.plugin(\"optimize\", function() {\n      console.log(\"Assets are being optimized.\");\n    });\n  });\n};\n\nmodule.exports = HelloCompilationPlugin;\n```\n\nFor more information on what callbacks are available on the `compiler`, `compilation`, and other important objects, see the [[plugins API|plugins]] doc.\n\n## Async compilation plugins\n\nSome compilation plugin steps are asynchronous, and pass a callback function that _must_ be invoked when your plugin is finished running.\n\n```javascript\nfunction HelloAsyncPlugin(options) {}\n\nHelloAsyncPlugin.prototype.apply = function(compiler) {\n  compiler.plugin(\"emit\", function(compilation, callback) {\n\n    // Do something async...\n    setTimeout(function() {\n      console.log(\"Done with async work...\");\n      callback();\n    }, 1000);\n\n  });\n};\n\nmodule.exports = HelloAsyncPlugin;\n```\n\n## Example\n\nOnce we can latch onto the webpack compiler and each individual compilations, the possibilities become endless for what we can do with the engine itself. We can reformat existing files, create derivative files, or fabricate entirely new assets.\n\nLet's write a simple example plugin that generates a new build file called `filelist.md`; the contents of which will list all of the asset files in our build. This plugin might look something like this:\n\n```javascript\nfunction FileListPlugin(options) {}\n\nFileListPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('emit', function(compilation, callback) {\n    // Create a header string for the generated file:\n    var filelist = 'In this build:\\n\\n';\n\n    // Loop through all compiled assets,\n    // adding a new line item for each filename.\n    for (var filename in compilation.assets) {\n      filelist += ('- '+ filename +'\\n');\n    }\n\n    // Insert this list into the webpack build as a new file asset:\n    compilation.assets['filelist.md'] = {\n      source: function() {\n        return filelist;\n      },\n      size: function() {\n        return filelist.length;\n      }\n    };\n\n    callback();\n  });\n};\n\nmodule.exports = FileListPlugin;\n```\n"
 	};
 
-/***/ },
-/* 240 */
-/***/ function(module, exports) {
+/***/ }),
+/* 244 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Development",
 		"__content": "\n\nThese guides cover what you need to know in order to develop webpack. WIP!\n"
 	};
 
-/***/ },
-/* 241 */
-/***/ function(module, exports) {
+/***/ }),
+/* 245 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Useful Plugin Patterns",
@@ -42236,9 +42976,9 @@ module.exports =
 		"__content": "\n\nPlugins grant unlimited opportunity to perform customizations within the webpack build system. This allows you to create custom asset types, perform unique build modifications, or even enhance the webpack runtime while using middleware. The following are some features of webpack that become useful while writing plugins.\n\n## Exploring assets, chunks, modules, and dependencies\n\nAfter a compilation is sealed, all structures within the compilation may be traversed.\n\n```javascript\nfunction MyPlugin() {}\n\nMyPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('emit', function(compilation, callback) {\n\n    // Explore each chunk (build output):\n    compilation.chunks.forEach(function(chunk) {\n      // Explore each module within the chunk (built inputs):\n      chunk.modules.forEach(function(module) {\n        // Explore each source file path that was included into the module:\n        module.fileDependencies.forEach(function(filepath) {\n          // we've learned a lot about the source structure now...\n        });\n      });\n\n      // Explore each asset filename generated by the chunk:\n      chunk.files.forEach(function(filename) {\n        // Get the asset source for each file generated by the chunk:\n        var source = compilation.assets[filename].source();\n      });\n    });\n\n    callback();\n  });\n};\n\nmodule.exports = MyPlugin;\n```\n\n- `compilation.modules`: An array of modules (built inputs) in the compilation. Each module manages the build of a raw file from your source library.\n\n- `module.fileDependencies`: An array of source file paths included into a module. This includes the source JavaScript file itself (ex: `index.js`), and all dependency asset files (stylesheets, images, etc) that it has required. Reviewing dependencies is useful for seeing what source files belong to a module.\n\n- `compilation.chunks`: An array of chunks (build outputs) in the compilation. Each chunk manages the composition of a final rendered assets.\n\n- `chunk.modules`: An array of modules that are included into a chunk. By extension, you may look through each module's dependencies to see what raw source files fed into a chunk.\n\n- `chunk.files`: An array of output filenames generated by the chunk. You may access these asset sources from the `compilation.assets` table.\n\n### Monitoring the watch graph\n\nWhile running webpack middleware, each compilation includes a `fileDependencies` array (what files are being watched) and a `fileTimestamps` hash that maps watched file paths to a timestamp. These are extremely useful for detecting what files have changed within the compilation:\n\n```javascript\nfunction MyPlugin() {\n  this.startTime = Date.now();\n  this.prevTimestamps = {};\n}\n\nMyPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('emit', function(compilation, callback) {\n\n    var changedFiles = Object.keys(compilation.fileTimestamps).filter(function(watchfile) {\n      return (this.prevTimestamps[watchfile] || this.startTime) < (compilation.fileTimestamps[watchfile] || Infinity);\n    }.bind(this));\n\n    this.prevTimestamps = compilation.fileTimestamps;\n    callback();\n  }.bind(this));\n};\n\nmodule.exports = MyPlugin;\n```\n\nYou may also feed new file paths into the watch graph to receive compilation triggers when those files change. Simply push valid filepaths into the `compilation.fileDependencies` array to add them to the watch. Note: the `fileDependencies` array is rebuilt in each compilation, so your plugin must push its own watched dependencies into each compilation to keep them under watch.\n\n## Changed chunks\n\nSimilar to the watch graph, it's fairly simple to monitor changed chunks (or modules, for that matter) within a compilation by tracking their hashes.\n\n```javascript\nfunction MyPlugin() {\n  this.chunkVersions = {};\n}\n\nMyPlugin.prototype.apply = function(compiler) {\n  compiler.plugin('emit', function(compilation, callback) {\n\n    var changedChunks = compilation.chunks.filter(function(chunk) {\n      var oldVersion = this.chunkVersions[chunk.name];\n      this.chunkVersions[chunk.name] = chunk.hash;\n      return chunk.hash !== oldVersion;\n    }.bind(this));\n\n    callback();\n  }.bind(this));\n};\n\nmodule.exports = MyPlugin;\n```\n"
 	};
 
-/***/ },
-/* 242 */
-/***/ function(module, exports) {
+/***/ }),
+/* 246 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "webpack merge, tag and release process",
@@ -42248,9 +42988,9 @@ module.exports =
 		"__content": "\n\nwebpack uses standard Automatic versioning and CHANGELOG management, using GitHub's new squash button and\nthe [recommended workflow](https://github.com/conventional-changelog/conventional-changelog-cli#recommended-workflow) for `conventional-changelog`.\n\n## Pull requests into `master`\n\n1. When you land commits on your `master` branch, select the _Squash and Merge_ option.\n2. Add a title and body that follows the [conventional-changelog-standard conventions](https://github.com/bcoe/conventional-changelog-standard/blob/master/convention.md).\n3. Land It!\n\n## Cut a standard release\n\n```sh\n# npm run script\nnpm run release\n# or global bin\nstandard-version\n```\n\n_This will increment the package version based on commit history from the last tag, update the changelog accordingly, commits the changes & cuts a **local tag**_\n\n### When satisfied with the local tag, push it up to master.\n\n```sh\n# commandline\ngit push --follow-tags origin master\n```\n\n## Cut a pre-release\n\nUse the flag `--prerelease` to generate pre-releases:\n\n_Example: Given the last version of the package is `1.0.0`, and your code to be committed has `semver: patch` level changes..._\n\n```bash\n# npm run script ( name === alpha, beta, rc )\nnpm run release -- --prerelease <name>\n```\n\n_this will tag the version `1.0.1-alpha.0`_\n\n## Cut a target release version imperatively like `npm version`\n\nTo forgo the automated version bump use `--release-as` with the argument `major`, `minor` or `patch`:\n\nSuppose the last version of your code is `1.0.0`, you've only landed `fix:` commits, but\nyou would like your next release to be a `minor`. Simply do:\n\n```bash\n# npm run script\nnpm run release -- --release-as minor\n```\n\n_you will get version `1.1.0` rather than the auto generated version `1.0.1`._\n\n> **NOTE:** you can combine `--release-as` and `--prerelease` to generate a release. This is useful when publishing experimental feature(s).\n\n## Signing commits and tags\n\nIf you have your GPG key set up, add the `--sign` or `-s` flag to your `standard-version` command."
 	};
 
-/***/ },
-/* 243 */
-/***/ function(module, exports) {
+/***/ }),
+/* 247 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Getting Started",
@@ -42266,9 +43006,9 @@ module.exports =
 		"__content": "\n\nwebpack is a tool to build JavaScript modules in your application. To start using `webpack` from its [cli](/api/cli) or [api](/api/node), follow the [Installation instructions](/get-started/install-webpack).\nwebpack simplifies your workflow by quickly constructing a dependency graph of your application and bundling them in the right order. webpack can be configured to customise optimisations to your code, to split vendor/css/js code for production, run a development server that hot-reloads your code without page refresh and many such cool features. Learn more about [why you should use webpack](/get-started/why-webpack).\n\n## Creating a bundle\n\nCreate a demo directory to try out webpack. [Install webpack](/get-started/install-webpack).\n\n```bash\nmkdir webpack-demo && cd webpack-demo\nnpm init -y\nnpm install --save-dev webpack@beta\n./node_modules/.bin/webpack --help # Shows a list of valid cli commands\n.\\node_modules\\.bin\\webpack --help # For windows users\n```\n\nNow create a subdirectory `app` with an `index.js` file.\n\n__app/index.js__\n\n```javascript\nfunction component () {\n  var element = document.createElement('div');\n\n  /* lodash is required for the next line to work */\n  element.innerHTML = _.join(['Hello','webpack'], ' ');\n\n  return element;\n}\n\ndocument.body.appendChild(component());\n```\n\nTo run this piece of code, one usually has the below HTML\n\n__index.html__\n\n```html\n<html>\n  <head>\n    <title>webpack 2 demo</title>\n    <script src=\"https://unpkg.com/lodash@4.16.6\"></script>\n  </head>\n  <body>\n    <script src=\"app/index.js\"></script>\n  </body>\n</html>\n```\n\nIn this example, there are implicit dependencies between the `<script>` tags.\n\n`index.js` depends on `lodash` being included in the page before it runs. It is implicit because `index.js` never declared a need for `lodash`; it just assumes that a global variable `_` exists.\n\nThere are problems with managing JavaScript projects this way:\n  - If a dependency is missing, or is included in the wrong order, the application will not function at all.\n  - If a dependency is included but is not used, then there is a lot of unnecessary code that the browser has to download.\n\nTo bundle the `lodash` dependency with `index.js`, we need to first install `lodash`\n\n```\nnpm install --save lodash\n```\n\nand then import it.\n\n__app/index.js__\n\n```diff\n+ import _ from 'lodash';\n\nfunction component () {\n  ...\n```\n\nWe also need to change `index.html` to expect a single bundled js file.\n\n```diff\n<html>\n  <head>\n    <title>webpack 2 demo</title>\n-   <script src=\"https://unpkg.com/lodash@4.16.6\"></script>\n  </head>\n  <body>\n-   <script src=\"app/index.js\"></script>\n+   <script src=\"dist/bundle.js\"></script>\n  </body>\n</html>\n```\n\nHere, `index.js` explicitly requires `lodash` to be present, and binds it as `_` (no global scope pollution).\n\nBy stating what dependencies a module needs, webpack can use this information to build a dependency graph. It then uses the graph to generate an optimized bundle where scripts will be executed in the correct order. Also unused dependencies will not be included in the bundle.\n\nNow run `webpack` on this folder with `index.js` as the entry file and `bundle.js` as the output file in which all code required for the page is bundled.\n\n```bash\n./node_modules/.bin/webpack app/index.js dist/bundle.js\n\nHash: a3c861a7d42fc8944524\nVersion: webpack 2.2.0\nTime: 90ms\n   Asset     Size  Chunks             Chunk Names\nindex.js  1.56 kB       0  [emitted]  main\n   [0] ./app/index.js 170 bytes {0} [built]\n\n```\nT> Output may vary. If the build is successful then you are good to go.\n\nT> If you [installed webpack globally](/get-started/install-webpack#global-installation), you have to invoke webpack using `webpack`.\n\nOpen `index.html` in your browser to see the result of a successful bundle.\nYou should see a page with the following text: 'Hello webpack'.\n\n## Using webpack with a config\n\nFor a more complex configuration, we can use a configuration file that webpack can reference to bundle your code. After you create a `webpack.config.js` file, you can represent the CLI command above\nwith the following config settings.\n\n__webpack.config.js__\n```javascript\nvar path = require('path');\n\nmodule.exports = {\n  entry: './app/index.js',\n  output: {\n    filename: 'bundle.js',\n    path: path.resolve(__dirname, 'dist')\n  }\n};\n```\n\nThis file can be run by webpack as follows.\n\n```bash\nwebpack --config webpack.config.js\n\nHash: a3c861a7d42fc8944524\nVersion: webpack 2.2.0\nTime: 90ms\n   Asset     Size  Chunks             Chunk Names\nindex.js  1.56 kB       0  [emitted]  main\n   [0] ./app/index.js 170 bytes {0} [built]\n\n```\n\nT> If a `webpack.config.js` is present, `webpack` command picks it up by default.\n\nT> If you created a successful `dist/bundle.js` file using the 'Creating a bundle' section, delete the `dist` subdirectory to validate output from your `webpack.config.js` file settings.\n\nThe config file allows for all the flexibility in using webpack. We can add loader rules, plugins, resolve options and many other enhancements to our bundles using this configuration file.\n\n## Using webpack with npm\n\nGiven it's not particularly fun to run webpack from the CLI this way, we can set up a little shortcut. Adjust *package.json* like this:\n\n```json\n{\n  ...\n  \"scripts\": {\n    \"build\": \"webpack\"\n  },\n  ...\n}\n```\n\nYou can now achieve the same as above by using `npm run build` command. npm picks up the scripts through it and patches the environment temporarily so that it contains the bin commands. You will see this convention in a lot of projects out there.\n\nT> You can pass custom parameters to webpack by adding two dashes to the `npm run build` command, e.g. `npm run build -- --colors`.\n\n## Conclusion\n\nNow that you have a basic build together, you should dig into the [basic concepts](/concepts) and [configuration](/configuration) of webpack to better understand its design. Also check out the [guides](/guides) to learn how to approach common problems. The [API](/api) section digs into the lower level features.\n"
 	};
 
-/***/ },
-/* 244 */
-/***/ function(module, exports) {
+/***/ }),
+/* 248 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Installation",
@@ -42280,9 +43020,9 @@ module.exports =
 		"__content": "\n\n### Pre-requisites\n\nBefore getting started, make sure you have a fresh version of [Node.js](https://nodejs.org/en/) installed. The current LTS is an ideal starting point. You may run into a variety of issues with the older versions as they may be missing functionality webpack or related packages might need.\n\nNote that this documentation is for webpack 2, for which there is not yet a stable release. You can get the most recent beta by installing with the `beta` tag (see below).\n\nThe next section tells you how to install webpack locally in a project.\n\n### Local Installation\n\n``` bash\nnpm install webpack@beta --save-dev\n\nnpm install webpack@<version> --save-dev\n```\n\nIf you are using npm scripts in your project, npm will try to look for webpack installation in your local modules for which this installation technique is useful.\n\n```json\n\"scripts\": {\n\t\"start\": \"webpack --config mywebpack.config.js\"\n}\n```\n\nThis is standard and recommended practice.\n\nT> To run the local installation of webpack you can access its bin version as `node_modules/.bin/webpack`\n\n\n### Global Installation\n\nW> Note that a global webpack installation is not a recommended practice. This locks you down to a specific version of webpack and might fail in projects that use a different version.\n\n``` bash\nnpm install webpack@beta -g\n```\n\nThe `webpack` command is now available globally.\n\n\n### Bleeding Edge\n\nIf you are enthusiastic about using the latest that webpack has to offer (beware - may be unstable), you can install directly from the webpack repository using\n\n``` bash\nnpm install webpack/webpack#<tagname/branchname>\n```\n"
 	};
 
-/***/ },
-/* 245 */
-/***/ function(module, exports) {
+/***/ }),
+/* 249 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Why webpack?",
@@ -42295,9 +43035,9 @@ module.exports =
 		"__content": "\n\nwebpack is usually compared to tools like Make, Grunt, Gulp, Browserify or Brunch. However, some of these tools (Make, Grunt, and Gulp, which are task runners) have a much different purpose than webpack, which is a module bundler. Comparing them directly could lead to sorts of confusion, so let’s first draw a distinction between these types of tools.\n\n## What Are Task Runners?\n\nTask runners literally make it easier to handle tasks, such as linting, building, or developing your project. Compared to *bundlers* like Browserify, Brunch, or webpack, they have a higher level focus. Bundlers, on the other hand, have a much more specific goal.\n\n\n## What Are Bundlers?\n\nRoughly put bundlers take assets, such as JavaScript files in, and then transform them into format that's suitable for the browser of the end user to consume. This process of bundling happens to be one of the most important problems in web development and solving it well can remove a large part of pain from the process.\n\nBundlers can work in tandem with task runners. You can still benefit from their higher level tooling while leaving the problem of bundling to more specialized tools. [grunt-webpack](https://www.npmjs.com/package/grunt-webpack) and [gulp-webpack](https://www.npmjs.com/package/gulp-webpack) are good examples of integrations.\n\nT> Often webpack users use npm `scripts` as their task runner. This is a good starting point. Cross-platform support can become a problem, but there are several workarounds for that.\n\nT> Even though webpack core focuses on bundling, you can find a variety of extensions that allow you to use it in a task runner kind of way.\n\n## Comparison\n\nwebpack however is not the only module bundler out there. If you are choosing between using webpack or any of the bundlers below, here is a feature by feature comparison on how webpack fares against the current competition.\n\n| Feature | webpack/webpack | jrburke/requirejs | substack/node-browserify | jspm/jspm-cli | rollup/rollup | brunch/brunch |\n|---------|-----------------|-------------------|--------------------------|---------------|---------------|---------------|\n| Additional chunks are loaded on demand | **yes** | **yes** | no | [System.import](https://github.com/systemjs/systemjs/blob/master/docs/system-api.md#systemimportmodulename--normalizedparentname---promisemodule) | no | no |\n| AMD `define` | **yes** | **yes** | [deamdify](https://github.com/jaredhanson/deamdify) | yes | [rollup-plugin-amd](https://github.com/brunch/uglify-js-brunch) | yes |\n| AMD `require` | **yes** | **yes** | no | yes | no | yes |\n| AMD `require` loads on demand | **yes** | with manual configuration | no | yes | no | no |\n| CommonJS `exports` | **yes** | only wrapping in `define` | **yes** | yes | [commonjs-plugin](https://github.com/rollup/rollup-plugin-commonjs) | yes |\n| CommonJS `require` | **yes** | only wrapping in `define` | **yes** | yes | [commonjs-plugin](https://github.com/rollup/rollup-plugin-commonjs) | yes |\n| CommonJS `require.resolve` | **yes** | no | no | no | no | |\n| Concat in require `require(\"./fi\" + \"le\")` | **yes** | no♦ | no | no | no | |\n| Debugging support | **SourceUrl, SourceMaps** | not required | SourceMaps | **SourceUrl, SourceMaps** | **SourceUrl, SourceMaps** | SourceMaps |\n| Dependencies | 19MB / 127 packages | 11MB / 118 packages | **1.2MB / 1 package** | 26MB / 131 packages | ?MB / 3 packages | |\n| ES2015 `import`/`export` | **yes** (webpack 2) | no | no | **yes** | **yes** | yes, via [es6 module transpiler](https://github.com/gcollazo/es6-module-transpiler-brunch)\n| Expressions in require (guided) `require(\"./templates/\" + template)` | **yes (all files matching included)** | no♦ | no | no | no | no |\n| Expressions in require (free) `require(moduleName)` | with manual configuration | no♦ | no | no | no | |\n| Generate a single bundle | **yes** | yes♦ | yes | yes | yes | yes |\n| Indirect require `var r = require; r(\"./file\")` | **yes** | no♦ | no | no | no | |\n| Load each file separate | no | yes | no | yes | no | no |\n| Mangle path names | **yes** | no | partial | yes | not required (path names are not included in the bundle) | no |\n| Minimizing | uglify | uglify, closure compiler | [uglifyify](https://github.com/hughsk/uglifyify) | yes | [uglify-plugin](https://github.com/TrySound/rollup-plugin-uglify) | [UglifyJS-brunch](https://github.com/brunch/uglify-js-brunch)\n| Multi pages build with common bundle | with manual configuration | **yes** | with manual configuration | with bundle arithmetic | no | no|\n| Multiple bundles | **yes** | with manual configuration | with manual configuration | yes | no | yes |\n| Node.js built-in libs `require(\"path\")` | **yes** | no | **yes** | **yes** | [node-resolve-plugin](https://github.com/rollup/rollup-plugin-node-resolve) | |\n| Other Node.js stuff | process, __dir/filename, global | - | process, __dir/filename, global | process, __dir/filename, global for cjs | global ([commonjs-plugin](https://github.com/rollup/rollup-plugin-commonjs)) | |\n| Plugins | **yes** | yes | **yes** | yes | yes | yes |\n| Preprocessing | **loaders, [transforms](https://github.com/webpack/transform-loader)** | loaders | transforms | plugin translate | plugin transforms | compilers, optimizers |\n| Replacement for browser | `web_modules`, `.web.js`, package.json field, alias config option | alias option | package.json field, alias option | package.json, alias option | no | |\n| Requirable files | file system | **web** | file system | through plugins | file system or through plugins | file system |\n| Runtime overhead | **243B + 20B per module + 4B per dependency** | 14.7kB + 0B per module + (3B + X) per dependency | 415B + 25B per module + (6B + 2X) per dependency | 5.5kB for self-executing bundles, 38kB for full loader and polyfill, 0 plain modules, 293B CJS, 139B ES2015 System.register before gzip | **none for ES2015 modules** (other formats may have) | |\n| Watch mode | yes | not required | yes | not needed in dev | no | yes |\n\n♦ in production mode (opposite in development mode)\n\nX is the length of the path string\n"
 	};
 
-/***/ },
-/* 246 */
-/***/ function(module, exports) {
+/***/ }),
+/* 250 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Authoring Libraries",
@@ -42309,9 +43049,9 @@ module.exports =
 		"__content": "\n\nwebpack is a tool which can be used to bundle application code and also to bundle library code. If you are the author of a JavaScript library and are looking to streamline your bundle strategy then this document will help you.\n\n## Author a Library\n\nWe have here a small wrapper library to convert number 1 to 5 from number to word and vice-versa. It looks something like this.\n\n__src/index.js__\n```javascript\nimport _ from 'lodash';\nimport numRef from './ref.json';\n\nexport function numToWord(num) {\n    return _.reduce(numRef, (accum, ref) => {\n        return ref.num === num ? ref.word : accum;\n    }, '');\n};\n\nexport function wordToNum(word) {\n    return _.reduce(numRef, (accum, ref) => {\n        return ref.word === word && word.toLowerCase() ? ref.num : accum;\n    }, -1);\n};\n```\n\nThe usage spec for the library will be as follows.\n\n```javascript\n// ES2015 modules\n\nimport * as webpackNumbers from 'webpack-numbers';\n\n...\nwebpackNumbers.wordToNum('Two') // output is 2\n...\n\n// CommonJS modules\n\nvar webpackNumbers = require('webpack-numbers');\n\n...\nwebpackNumbers.numToWord(3); // output is Three\n...\n\n// As a script tag\n\n<html>\n...\n<script src=\"https://unpkg.com/webpack-numbers\"></script>\n<script>\n    ...\n    /* webpackNumbers is available as a global variable */\n    webpackNumbers.wordToNum('Five') //output is 5\n    ...\n</script>\n</html>\n```\n\nFor full library configuration and code please refer to [webpack-library-example](https://github.com/kalcifer/webpack-library-example)\n\n## Configure webpack\n\nNow the agenda is to bundle this library\n  - Without bundling lodash but requiring it to be loaded by the consumer.\n  - Name of the library is `webpack-numbers` and the variable is `webpackNumbers`.\n  - Library can be imported as `import webpackNumbers from 'webpack-numbers'` or `require('webpack-numbers')`.\n  - Library can be accessed through global variable `webpackNumbers` when included through `script` tag.\n  - Library can be accessed inside Node.js.\n\n### Add webpack\n\nAdd basic webpack configuration.\n\n__webpack.config.js__\n\n```javascript\nvar path = require('path');\n\nmodule.exports = {\n    entry: './src/index.js',\n    output: {\n        path: path.resolve(__dirname, 'dist'),\n        filename: 'webpack-numbers.js'\n    }\n};\n\n```\n\nThis adds basic configuration to bundle the library.\n\n### Add `externals`\n\nNow, if you run `webpack`, you will find that a largish bundle file is created. If you inspect the file, you will find that lodash has been bundled along with your code.\nIt would be unnecessary for your library to bundle a library like `lodash`. Hence you would want to give up control of this external library to the consumer of your library.\n\nThis can be done using the `externals` configuration as\n\n__webpack.config.js__\n\n```javascript\nmodule.exports = {\n    ...\n    externals: {\n        \"lodash\": {\n            commonjs: \"lodash\",\n            commonjs2: \"lodash\",\n            amd: \"lodash\",\n            root: \"_\"\n        }\n    }\n    ...\n};\n```\n\nThis means that your library expects a dependency named `lodash` to be available in the consumer's environment.\n\n### Add `libraryTarget`\n\nFor widespread use of the library, we would like it to be compatible in different environments, i. e. CommonJS, AMD, Node.js and as a global variable.\n\nTo make your library available for reuse, add `library` property in webpack configuration.\n\n__webpack.config.js__\n\n```javascript\nmodule.exports = {\n    ...\n    output: {\n        ...\n        library: 'webpackNumbers'\n    }\n    ...\n};\n```\n\nThis makes your library bundle to be available as a global variable when imported.\nTo make the library compatible with other environments, add `libraryTarget` property to the config.\n\n__webpack.config.js__\n\n```javascript\nmodule.exports = {\n    ...\n    output: {\n        ...\n        library: 'webpackNumbers',\n        libraryTarget:'umd' // Possible value - amd, commonjs, commonjs2, commonjs-module, this, var\n    }\n    ...\n};\n```\n\nIf `library` is set and `libraryTarget` is not, `libraryTarget` defaults to `var` as specified in the [config reference](/configuration/output).\n\n### Final Steps\n\n[Tweak your production build using webpack](/guides/production-build).\n\nAdd the path to your generated bundle as the package's main file in `package.json`\n\n__package.json__\n\n```javascript\n{\n    ...\n    \"main\": \"dist/webpack-numbers.js\",\n    \"module\": \"src/index.js\", // To add as standard module as per https://github.com/dherman/defense-of-dot-js/blob/master/proposal.md#typical-usage\n    ...\n}\n```\n\nNow you can [publish it as an npm package](https://docs.npmjs.com/getting-started/publishing-npm-packages) and find it at [unpkg.com](https://unpkg.com/#/) to distribute it to your users.\n"
 	};
 
-/***/ },
-/* 247 */
-/***/ function(module, exports) {
+/***/ }),
+/* 251 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Improving Build Performance",
@@ -42319,9 +43059,9 @@ module.exports =
 		"__content": "\n\n> incremental builds\n> profile\n> analyse tool\n> dirty chunks ([chunkhash])\n> source maps\n> PrefetchPlugin\n> resolving\n> DllPlugin\n\n> see also [[development tools]]\n> see also [[resolving]]\n"
 	};
 
-/***/ },
-/* 248 */
-/***/ function(module, exports) {
+/***/ }),
+/* 252 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Caching",
@@ -42333,9 +43073,9 @@ module.exports =
 		"__content": "\n\nTo enable long-term caching of static resources produced by webpack:\n\n1. Use `[chunkhash]` to add a content-dependent cache-buster to each file.\n2. Extract the webpack manifest into a separate file.\n3. Ensure that the entry point chunk containing the bootstrapping code doesn’t change hash over time for the same set of dependencies.\n\n    For even more optimized setup:\n4. Use compiler stats to get the file names when requiring resources in HTML.\n5. Generate the chunk manifest JSON and inline it into the HTML page before loading resources.\n\n\n## The problem\n\nEach time something needs to be updated in our code, it has to be re-deployed on the server and then re-downloaded by all clients. This is clearly inefficient since fetching resources over the network can be slow. This is why browsers cache static resources.\n\nThe way it works has a pitfall: If we don’t change filenames of our resources when deploying a new version, the browser might think it hasn’t been updated and client will get a cached version of it.\n\nA simple way to tell the browser to download a newer version is to alter the asset’s file name. In a pre-webpack era we used to add a build number to the filenames as a parameter and then increment it:\n\n```bash\napplication.js?build=1\napplication.css?build=1\n```\n\nIt is even easier to do with webpack. Each webpack build generates a unique hash which can be used to compose a filename, by including output [placeholders](/concepts/output/#options).\nThe following example config will generate 2 files (1 per entry) with hashes in filenames:\n\n```js\n// webpack.config.js\nconst path = require(\"path\");\n\nmodule.exports = {\n  entry: {\n    vendor: \"./src/vendor.js\",\n    main: \"./src/index.js\"\n  },\n  output: {\n    path: path.join(__dirname, \"build\"),\n    filename: \"[name].[hash].js\"\n  }\n};\n```\n\nRunning webpack with this config will produce the following output:\n\n```bash\nHash: 2a6c1fee4b5b0d2c9285\nVersion: webpack 2.2.0\nTime: 62ms\n                         Asset     Size  Chunks             Chunk Names\nvendor.2a6c1fee4b5b0d2c9285.js  2.58 kB       0  [emitted]  vendor\n  main.2a6c1fee4b5b0d2c9285.js  2.57 kB       1  [emitted]  main\n   [0] ./src/index.js 63 bytes {1} [built]\n   [1] ./src/vendor.js 63 bytes {0} [built]\n```\n\nBut the problem here is, builds after *any file update* will update all filenames and clients will have to re-download all application code. So how can we guarantee that clients always get the latest versions of assets without re-downloading all of them?\n\n## Generating unique hashes for each file\n\nWhat if we could produce the same filename, if the contents of the file did not change between builds? For example, it would be unnecessary to re-download a vendor file, when no dependencies have been updated, only application code.\n\nwebpack allows you to generate hashes depending on file contents, by replacing the placeholder `[hash]` with `[chunkhash]`. Here is the updated config:\n\n```diff\nmodule.exports = {\n  /*...*/\n  output: {\n    /*...*/\n-   filename: \"[name].[hash].js\"\n+   filename: \"[name].[chunkhash].js\"\n  }\n};\n```\n\nThis config will also create 2 files, but in this case, each file will get its own unique hash.\n\n```bash\nHash: cfba4af36e2b11ef15db\nVersion: webpack 2.2.0\nTime: 66ms\n                         Asset     Size  Chunks             Chunk Names\nvendor.50cfb8f89ce2262e5325.js  2.58 kB       0  [emitted]  vendor\n  main.70b594fe8b07bcedaa98.js  2.57 kB       1  [emitted]  main\n   [0] ./src/index.js 63 bytes {1} [built]\n   [1] ./src/vendor.js 63 bytes {0} [built]\n```\n\nT> Don’t use [chunkhash] in development since this will increase compilation time. Separate development and production configs and use [name].js for development and [name].[chunkhash].js in production.\n\n## Get filenames from webpack compilation stats\n\nWhen working in development mode, you just reference JavaScript files by entry point name in your HTML.\n\n```html\n<script src=\"vendor.js\"></script>\n<script src=\"main.js\"></script>\n```\n\nAlthough, each time we build for production, we’ll get different file names. Something, that looks like this:\n\n```html\n<script src=\"vendor.50cfb8f89ce2262e5325.js\"></script>\n<script src=\"main.70b594fe8b07bcedaa98.js\"></script>\n```\n\nIn order to reference a correct file in the HTML, we’ll need information about our build. This can be extracted from webpack compilation stats by using this plugin:\n\n```js\n// webpack.config.js\nconst path = require(\"path\");\n\nmodule.exports = {\n  /*...*/\n  plugins: [\n    function() {\n      this.plugin(\"done\", function(stats) {\n        require(\"fs\").writeFileSync(\n          path.join(__dirname, \"build\", \"stats.json\"),\n          JSON.stringify(stats.toJson()));\n      });\n    }\n  ]\n};\n```\n\nAlternatively, just use one of these plugins to export JSON files:\n\n* https://www.npmjs.com/package/webpack-manifest-plugin\n* https://www.npmjs.com/package/assets-webpack-plugin\n\nA sample output when using `webpack-manifest-plugin` in our config looks like:\n\n```json\n{\n  \"main.js\": \"main.155567618f4367cd1cb8.js\",\n  \"vendor.js\": \"vendor.c2330c22cd2decb5da5a.js\"\n}\n```\n\n## Deterministic hashes\n\nTo minimize the size of generated files, webpack uses identifiers instead of module names. During compilation, identifiers are generated, mapped to chunk filenames and then put into a JavaScript object called *chunk manifest*.\nTo generate identifiers that are preserved over builds, webpack supply the `NamedModulesPlugin` (recommended for development) and `HashedModuleIdsPlugin` (recommended for production).\n\n> TODO: When exist, link to `NamedModulesPlugin` and `HashedModuleIdsPlugin` docs pages\n\n> TODO: Describe how the option `recordsPath` option works \n\nThe chunk manifest (along with bootstrapping/runtime code) is then placed into the entry chunk and it is crucial for webpack-packaged code to work.\n\nT> Separate your vendor and application code with [CommonsChunkPlugin](/plugins/commons-chunk-plugin) and create an explicit vendor chunk to prevent it from changing too often. When `CommonsChunkPlugin` is used, the runtime code is moved to the *last* common entry.\n\nThe problem with this, is the same as before: Whenever we change any part of the code it will, even if the rest of its contents wasn’t altered, update our entry chunk to include the new manifest. This in turn, will lead to a new hash and dismiss the long-term caching.\n\nTo fix that, we should use [chunk-manifest-webpack-plugin](https://github.com/diurnalist/chunk-manifest-webpack-plugin), which will extract the manifest to a separate JSON file. This replaces the chunk manifest with a variable in the webpack runtime. But we can do even better; we can extract the runtime into a separate entry by using `CommonsChunkPlugin`. Here is an updated `webpack.config.js` which will produce the manifest and runtime files in our build directory:\n\n```js\n// webpack.config.js\nvar ChunkManifestPlugin = require(\"chunk-manifest-webpack-plugin\");\n\nmodule.exports = {\n  /*...*/\n  plugins: [\n    /*...*/\n    new webpack.optimize.CommonsChunkPlugin({\n      name: [\"vendor\", \"manifest\"], // vendor libs + extracted manifest\n      minChunks: Infinity,\n    }),\n    /*...*/\n    new ChunkManifestPlugin({\n      filename: \"chunk-manifest.json\",\n      manifestVariable: \"webpackManifest\"\n    })\n  ]\n};\n```\n\nAs we removed the manifest from the entry chunk, now it’s our responsibility to provide webpack with it. The `manifestVariable` option in the example above is the name of the global variable where webpack will look for the manifest JSON. This *should be defined before we require our bundle in HTML*. This is achieved by inlining the contents of the JSON in HTML. Our HTML head section should look like this:\n\n```html\n<html>\n  <head>\n    <script>\n    //<![CDATA[\n    window.webpackManifest = {\"0\":\"main.5f020f80c23aa50ebedf.js\",\"1\":\"vendor.81adc64d405c8b218485.js\"}\n    //]]>\n    </script>\n  </head>\n  <body>\n  </body>\n</html>\n```\n\nAt the end of the day, the hashes for the files should be based on the file content. For this use [webpack-chunk-hash](https://github.com/alexindigo/webpack-chunk-hash) or [webpack-md5-hash](https://github.com/erm0l0v/webpack-md5-hash).\n\nSo the final `webpack.config.js` should look like this:\n\n```js\nvar path = require(\"path\");\nvar webpack = require(\"webpack\");\nvar ChunkManifestPlugin = require(\"chunk-manifest-webpack-plugin\");\nvar WebpackChunkHash = require(\"webpack-chunk-hash\");\n\nmodule.exports = {\n  entry: {\n    vendor: \"./src/vendor.js\", // vendor reference file(s)\n    main: \"./src/index.js\" // application code\n  },\n  output: {\n    path: path.join(__dirname, \"build\"),\n    filename: \"[name].[chunkhash].js\",\n    chunkFilename: \"[name].[chunkhash].js\"\n  },\n  plugins: [\n    new webpack.optimize.CommonsChunkPlugin({\n      name: [\"vendor\", \"manifest\"], // vendor libs + extracted manifest\n      minChunks: Infinity,\n    }),\n    new webpack.HashedModuleIdsPlugin(),\n    new WebpackChunkHash(),\n    new ChunkManifestPlugin({\n      filename: \"chunk-manifest.json\",\n      manifestVariable: \"webpackManifest\"\n    })\n  ]\n};\n```\n\nUsing this config the vendor chunk should not be changing its hash, unless you update its code or dependencies. Here is a sample output for 2 runs with `moduleB.js` being changed between the runs:\n\n```bash\n> node_modules/.bin/webpack\n\nHash: f0ae5bf7c6a1fd3b2127\nVersion: webpack 2.2.0\nTime: 102ms\n                           Asset       Size  Chunks             Chunk Names\n    main.9ebe4bf7d99ffc17e75f.js  509 bytes    0, 2  [emitted]  main\n  vendor.81adc64d405c8b218485.js  159 bytes    1, 2  [emitted]  vendor\n             chunk-manifest.json   73 bytes          [emitted]\nmanifest.d41d8cd98f00b204e980.js    5.56 kB       2  [emitted]  manifest\n```\n```bash\n> node_modules/.bin/webpack\n\nHash: b5fb8e138b039ab515f3\nVersion: webpack 2.2.0\nTime: 87ms\n                           Asset       Size  Chunks             Chunk Names\n    main.5f020f80c23aa50ebedf.js  521 bytes    0, 2  [emitted]  main\n  vendor.81adc64d405c8b218485.js  159 bytes    1, 2  [emitted]  vendor\n             chunk-manifest.json   73 bytes          [emitted]\nmanifest.d41d8cd98f00b204e980.js    5.56 kB       2  [emitted]  manifest\n```\n\nNotice that **vendor chunk has the same filename**, and **so does the manifest** since we’ve extracted the manifest chunk!\n\n## Manifest inlining\n\nInlining the chunk manifest and webpack runtime (to prevent extra HTTP requests), depends on your server setup. There is a nice [walkthrough for Rails-based projects](http://clarkdave.net/2015/01/how-to-use-webpack-with-rails/#including-precompiled-assets-in-views). For server-side rendering in Node.js you can use [webpack-isomorphic-tools](https://github.com/halt-hammerzeit/webpack-isomorphic-tools).\n\nT> If your application doesn’t rely on any server-side rendering, it’s often enough to generate a single `index.html` file for your application. To do so, use i.e. [webpack-html-plugin](https://github.com/ampedandwired/html-webpack-plugin) in combination with [script-ext-html-webpack-plugin](https://github.com/numical/script-ext-html-webpack-plugin) or [inline-manifest-webpack-plugin](https://github.com/szrenwei/inline-manifest-webpack-plugin). It will simplify the setup dramatically.\n\n## References\n\n* https://medium.com/@okonetchnikov/long-term-caching-of-static-assets-with-webpack-1ecb139adb95#.vtwnssps4\n* https://gist.github.com/sokra/ff1b0290282bfa2c037bdb6dcca1a7aa\n* https://github.com/webpack/webpack/issues/1315\n* https://github.com/webpack/webpack.js.org/issues/652\n* https://presentations.survivejs.com/advanced-webpack/\n"
 	};
 
-/***/ },
-/* 249 */
-/***/ function(module, exports) {
+/***/ }),
+/* 253 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Code Splitting - CSS",
@@ -42348,9 +43088,9 @@ module.exports =
 		"__content": "\n\nIn webpack, when you use the css-loader and import CSS into your JavaScript files, the CSS is bundled along with your JavaScript.\nThis has the disadvantage that, you will not be able to utilize the browser's ability to load CSS asynchronously and parallel. Instead, your page will have to wait until your whole JavaScript bundle is loaded, to style itself.\nwebpack can help with this problem by bundling the CSS separately using [extract-text-webpack-plugin](https://github.com/webpack/extract-text-webpack-plugin) and the [css-loader](https://github.com/webpack/css-loader).\n\n## Using `css-loader`\n\nTo import css into your JavaScript code like [any other module](/concepts/modules), you will have to use the [css-loader](https://github.com/webpack/css-loader).\nThe webpack config with `css-loader` will look like\n\n```javascript\n//webpack.config.js\n\nmodule.exports = function(env){\n    entry: '..',\n    ...\n    module: {\n        rules: [{\n            test: /\\.css$/,\n            exclude: /node_modules/,\n            loader: 'css-loader'\n        }]\n    }\n    ...\n}\n```\n\n## Using `extract-text-webpack-plugin` - ExtractTextPlugin\n\nInstall this plugin as follows\n```\nnpm i --save-dev extract-text-webpack-plugin\n```\n\nTo use this `ExtractTextPlugin`, it needs to be added to the `webpack.config.js` file in two steps.\n### In the loader\n\nAdapting from the previous example with the `css-loader`, we should add `ExtractTextPlugin` as follows\n\n```javascript\n...\nloader: ExtractTextPlugin.extract('css-loader?sourceMap') //Can be used without sourcemaps too.\n...\n```\n\n### In the plugin\n\n```javascript\nnew ExtractTextPlugin({ filename: 'bundle.css', disable: false, allChunks: true })\n```\n\nWith above two steps, you can generate a new bundle specifically for all the CSS modules and add them as a separate tag in the `index.html`.\nFor more information on how to use the api, please go to [`ExtractTextPlugin` api](https://github.com/webpack/extract-text-webpack-plugin#api).\n\nThe full config for splitting css with `ExtractTextPlugin` is as follows\n\n```javascript\nvar ExtractTextPlugin = require('extract-text-webpack-plugin');\nvar path = require('path');\n\nmodule.exports = function () {\n    return {\n        entry: './main.js',\n        output: {\n            path: path.resolve(__dirname, 'dist'),\n            filename: 'bundle.js'\n        },\n        module: {\n            rules: [{\n                test: /\\.css$/,\n                exclude: /node_modules/,\n                loader: ExtractTextPlugin.extract({\n                    loader: 'css-loader?sourceMap'\n                })\n            }]\n        },\n        devtool: 'source-map',\n        plugins: [\n            new ExtractTextPlugin({ filename: 'bundle.css', disable: false, allChunks: true })\n        ]\n    }\n}\n```\n"
 	};
 
-/***/ },
-/* 250 */
-/***/ function(module, exports) {
+/***/ }),
+/* 254 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Code Splitting - Libraries",
@@ -42363,9 +43103,9 @@ module.exports =
 		"__content": "\n\nA typical application uses third party libraries for framework/functionality needs. Particular versions of these libraries are used and code here does not change often. However, the application code changes frequently.\n\nBundling application code with third party code would be inefficient. This is because the browser can cache asset files based on the cache header and files can be cached without needing to call the cdn again if its contents don't change. To take advantage of this, we want to keep the hash of the vendor files constant regardless of application code changes.\n\nWe can do this only when we separate the bundles for vendor and application code.\n\nLet's consider a sample application that uses [momentjs](https://www.npmjs.com/package/moment), a commonly used time formatting library.\n\nInstall `moment` as follows in your application directory.\n\n`npm install --save moment`\n\nThe index file will require `moment` as a dependency and log the current date as follows\n\n__index.js__\n```javascript\nvar moment = require('moment');\nconsole.log(moment().format());\n\n```\n\nWe can bundle the application with webpack using the following config\n\n__webpack.config.js__\n\n```javascript\nvar path = require('path');\n\nmodule.exports = function(env) {\n    return {\n        entry: './index.js',\n        output: {\n            filename: '[chunkhash].[name].js',\n            path: path.resolve(__dirname, 'dist')\n        }\n    }\n}\n```\n\nOn running `webpack` in your application, if you inspect the resulting bundle, you will see that `moment` and `index.js` have been bundled in `bundle.js`.\n\nThis is not ideal for the application. If the code in `index.js` changes, then the whole bundle is rebuilt. The browser will have to load a new copy of the new bundle even though most of it hasn't changed at all.\n\n## Multiple Entries\n\nLet's try to mitigate this by adding a separate entry point for `moment` and name it `vendor`\n\n__webpack.config.js__\n\n```javascript\nvar path = require('path');\n\nmodule.exports = function(env) {\n    return {\n        entry: {\n            main: './index.js',\n            vendor: 'moment'\n        },\n        output: {\n            filename: '[chunkhash].[name].js',\n            path: path.resolve(__dirname, 'dist')\n        }\n    }\n}\n```\n\nOn running `webpack` now, we see that two bundles have been created. If you inspect these though, you will find that the code for `moment` is present in both the files!\n\nIt is for this reason, that we will need to use the [CommonsChunkPlugin](/plugins/commons-chunk-plugin).\n\n## `CommonsChunkPlugin`\n\nThis is a pretty complex plugin. It fundamentally allows us to extract all the common modules from different bundles and add them to the common bundle. If a common bundle does not exist, then it creates a new one.\n\nWe can modify our webpack config file to use the `CommonsChunkPlugin` as follows\n\n__webpack.config.js__\n\n```javascript\nvar webpack = require('webpack');\nvar path = require('path');\n\nmodule.exports = function(env) {\n    return {\n        entry: {\n            main: './index.js',\n            vendor: 'moment'\n        },\n        output: {\n            filename: '[chunkhash].[name].js',\n            path: path.resolve(__dirname, 'dist')\n        },\n        plugins: [\n            new webpack.optimize.CommonsChunkPlugin({\n                name: 'vendor' // Specify the common bundle's name.\n            })\n        ]\n    }\n}\n```\nNow run `webpack` on your application. Bundle inspection shows that `moment` code is present only in the vendor bundle.\n\n## Manifest File\n\nBut, if we change application code and run `webpack` again, we see that the hash for the vendor file changes. Even though we achieved separate bundles for `vendor` and `main` bundles, we see that the `vendor` bundle changes when the application code changes.\nThis means that we still don't reap the benefits of browser caching because the hash for vendor file changes on every build and the browser will have to reload the file.\n\nThe issue here is that on every build, webpack generates some webpack runtime code, which helps webpack do it's job. When there is a single bundle, the runtime code resides in it. But when multiple bundles are generated, the runtime code is extracted into the common module, here the `vendor` file.\n\nTo prevent this, we need extract out the runtime into a separate manifest file. Even though we are creating another bundle, the overhead is offset by the long term caching benefits that we obtain on the `vendor` file.\n\n__webpack.config.js__\n\n```javascript\nvar webpack = require('webpack');\nvar path = require('path');\n\nmodule.exports = function(env) {\n    return {\n        entry: {\n            main: './index.js',\n            vendor: 'moment'\n        },\n        output: {\n            filename: '[chunkhash].[name].js',\n            path: path.resolve(__dirname, 'dist')\n        },\n        plugins: [\n            new webpack.optimize.CommonsChunkPlugin({\n                names: ['vendor', 'manifest'] // Specify the common bundle's name.\n            })\n        ]\n    }\n};\n```\n\nWith the above webpack config, we see three bundles being generated. `vendor`, `main` and `manifest` bundles.\n"
 	};
 
-/***/ },
-/* 251 */
-/***/ function(module, exports) {
+/***/ }),
+/* 255 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Code Splitting - Using require.ensure",
@@ -42378,9 +43118,9 @@ module.exports =
 		"__content": "\n\nIn this section, we will discuss how webpack splits code using `require.ensure()`.\n\n## `require.ensure()`\n\nwebpack statically parses for `require.ensure()` in the code while building and adds the modules here into a separate chunk. This new chunk is loaded on demand by webpack through jsonp.\n\nThe syntax is as follows\n\n```javascript\nrequire.ensure(dependencies: String[], callback: function(require), chunkName: String)\n```\n\n#### dependencies\nThis is an array of strings where we can declare all the modules that need to be made available before all the code in the callback function can be executed.\n\n#### callback\nThis is the callback function that webpack will execute once the dependencies are loaded. An implementation of the require object is sent as a parameter to this function. This is so that, we can further `require()` the dependencies and any other modules for execution.\n\n#### chunkName\nThe chunkName is the name given to the chunk created by this particular `require.ensure()`. By giving the same name at different split points of `require.ensure()`, we can make sure all the dependencies are collectively put in the same bundle.\n\nLet us consider the following project\n\n```bash\n\\\\ file structure\n    |\n    js --|\n    |    |-- entry.js\n    |    |-- a.js\n    |    |-- b.js\n    webpack.config.js\n    |\n    dist\n```\n\n```javascript\n\\\\ entry.js\n\nrequire('a');\nrequire.ensure([], function(require){\n    require('b');\n});\n\n\\\\ a.js\nconsole.log('***** I AM a *****');\n\n\\\\ b.js\nconsole.log('***** I AM b *****');\n```\n\n```javascript\n\\\\ webpack.config.js\nvar path = require('path');\n\nmodule.exports = function(env) {\n    return {\n        entry: './js/entry.js',\n        output: {\n            filename: 'bundle.js',\n            path: path.resolve(__dirname, 'dist')\n        }\n    }\n}\n```\nOn running webpack on this project, we find that webpack has created two new bundles, `bundle.js` and `0.bundle.js`.\n\n`entry.js` and `a.js` are bundled in `bundle.js`.\n\n`b.js` is bundled in `0.bundle.js`.\n\n?> `require.ensure` relies on `Promises` internally. If you use `require.ensure` with older browsers, remember to shim `Promise.` [es6-promise polyfill](https://github.com/stefanpenner/es6-promise).\n\n## Gotchas for `require.ensure()`\n\n### Empty Array as Parameter\n\n```javascript\nrequire.ensure([], function(require){\n    require('./a.js');\n});\n```\n\nThe above code ensures that a split point is created and `a.js` is bundled separately by webpack.\n\n### Dependencies as Parameter\n\n```javascript\nrequire.ensure(['./a.js'], function(require) {\n    require('./b.js');\n});\n```\n\nIn the above code, `a.js` and `b.js` are bundled together and split from the main bundle. But only the contents of `b.js` are executed. The contents of `a.js` are only made available and not executed.\nTo execute `a.js`, we will have to require it in a sync manner like `require('./a.js')` for the JavaScript to get executed.\n"
 	};
 
-/***/ },
-/* 252 */
-/***/ function(module, exports) {
+/***/ }),
+/* 256 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Code Splitting",
@@ -42392,9 +43132,9 @@ module.exports =
 		"__content": "\n\nCode splitting is one of the most compelling features of webpack. It allows you to split your code into various bundles which you can then load on demand — like when a user navigates to a matching route, or on an event from the user. This allows for smaller bundles, and allows you to control resource load prioritization, which if used correctly, can have a major impact on your application load time.\n\nThere are mainly two kinds of code splitting that can be accomplished with webpack:\n\n## Resource splitting for caching and parallel loads\n\n### Vendor code splitting\n\nA typical application can depend on many third party libraries for framework/functionality needs. Unlike application code, code present in these libraries does not change often.\n\nIf we keep code from these libraries in its own bundle, separate from the application code, we can leverage the browser's caching mechanism to cache these files for longer durations on the end user's machine. \n\nFor this to work, the `hash` portion in the vendor filename must remain constant, regardless of application code changes. Learn [how to split vendor/library](/guides/code-splitting-libraries) code using the CommonsChunkPlugin.\n\n### CSS splitting\n\nYou might also want to split your styles into a separate bundle, independent from application logic. \nThis enhances cacheability of your styles and allows the browser to load the styles in-parallel with your application code, thus preventing a FOUC (flash of unstyled content).\n\nLearn [how to split css](/guides/code-splitting-css) using the `ExtractTextWebpackPlugin`.\n\n## On demand code-splitting\n\nWhile resource splitting of the previous kind requires the user to specify the split points upfront in the configuration, one can also create dynamic split points in the application code.\n\nThis can be used for more granular chunking of code, for example, per our application routes or as per predicted user behaviour. This allows the user to load non-essential assets on demand.\n\n### Code splitting with `require.ensure()`\n\n`require.ensure()` is the CommonJS way of including assets asynchronously. By adding `require.ensure([<fileurl>])`, we can define a split point in the code. webpack can then create a separate bundle of all the code inside this split point.\nLearn [how to split code](/guides/code-splitting-require) using `require.ensure()`.\n\n?> Document `System.import()`\n\n\n"
 	};
 
-/***/ },
-/* 253 */
-/***/ function(module, exports) {
+/***/ }),
+/* 257 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Handling Compatibility",
@@ -42402,9 +43142,9 @@ module.exports =
 		"__content": "\n\n> require.main\n> require.cache\n> module.loaded\n> global\n> process\n> __dirname\n> __filename\n> module.id\n"
 	};
 
-/***/ },
-/* 254 */
-/***/ function(module, exports) {
+/***/ }),
+/* 258 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Dependency Management",
@@ -42416,9 +43156,9 @@ module.exports =
 		"__content": "\n\n> es6 modules\n\n> commonjs\n\n> amd\n\n## require with expression\n\nA context is created if your request contains expressions, so the **exact** module is not known on compile time.\n\nExample:\n```javascript\nrequire(\"./template/\" + name + \".ejs\");\n```\n\nwebpack parses the `require()` call and extracts some information:\n\n```\nDirectory: ./template\nRegular expression: /^.*\\.ejs$/\n```\n\n**context module**\n\nA context module is generated. It contains references to **all modules in that directory** that can be required with a request matching the regular expression. The context module contains a map which translates requests to module ids.\n\nExample:\n```javascript\n{\n    \"./table.ejs\": 42,\n    \"./table-row.ejs\": 43,\n    \"./directory/folder.ejs\": 44\n}\n```\nThe context module also contains some runtime logic to access the map.\n\nThis means dynamic requires are supported but will cause all possible modules to be included in the bundle.\n\n## `require.context`\n\nYou can create your own context with the `require.context()` function.\nIt allows you to pass in a directory to search, a flag indicating whether subdirectories should be searched\ntoo, and a regular expression to match files against.\n\nwebpack parses for `require.context()` in the code while building.\n\nThe syntax is as follows:\n\n```javascript\nrequire.context(directory, useSubdirectories = false, regExp = /^\\.\\//)\n```\n\nExamples:\n\n```javascript\nrequire.context(\"./test\", false, /\\.test\\.js$/);\n// a context with files from the test directory that can be required with a request endings with `.test.js`.\n```\n\n```javascript\nrequire.context(\"../\", true, /\\.stories\\.js$/);\n// a context with all files in the parent folder and descending folders ending with `.stories.js`.\n```\n\n### context module API\nA context module exports a (require) function that takes one argument: the request.\n\nThe exported function has 3 properties: `resolve`, `keys`, `id`.\n\n- `resolve` is a function and returns the module id of the parsed request.\n- `keys` is a function that returns an array of all possible requests that the context module can handle.\n\n  This can be useful if you want to require all files in a directory or matching a pattern, Example:\n\n  ```javascript\n  function importAll (r) {\n    r.keys().forEach(r);\n  }\n  importAll(require.context('../components/', true, /\\.js$/));\n  ```\n\n  ```javascript\n  var cache = {};\n  function importAll (r) {\n    r.keys().forEach(key => cache[key] = r(key));\n  }\n  importAll(require.context('../components/', true, /\\.js$/));\n  // At build-time cache will be populated with all required modules.\n  ```\n- `id` is the module id of the context module. This may be useful for `module.hot.accept`.\n"
 	};
 
-/***/ },
-/* 255 */
-/***/ function(module, exports) {
+/***/ }),
+/* 259 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Development - Docker",
@@ -42426,9 +43166,9 @@ module.exports =
 		"__content": "\n\n# What is docker\n"
 	};
 
-/***/ },
-/* 256 */
-/***/ function(module, exports) {
+/***/ }),
+/* 260 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Development - Third Party Tools",
@@ -42436,9 +43176,9 @@ module.exports =
 		"__content": "\n\n> Grunt, Gulp, Mocha, Karma\n"
 	};
 
-/***/ },
-/* 257 */
-/***/ function(module, exports) {
+/***/ }),
+/* 261 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Development - Vagrant",
@@ -42450,9 +43190,9 @@ module.exports =
 		"__content": "\n\nIf you have a more advanced project and use [Vagrant](https://www.vagrantup.com/) to run your development environment in a Virtual Machine, you'll often want to also run webpack in the VM.\n\n## Configuring the Project\n\nTo start, make sure that the `Vagrantfile` has a static IP;\n\n```ruby\nVagrant.configure(\"2\") do |config|\n  config.vm.network :private_network, ip: \"10.10.10.61\"\nend\n```\n\nNext, install webpack and webpack-dev-server in your project;\n\n```bash\nnpm install webpack webpack-dev-server --save-dev\n```\n\nMake sure to have a `webpack.config.js` file. If you haven't already, use this as a minimal example to get started:\n\n```js\nmodule.exports = {\n  context: __dirname,\n  entry: \"./app.js\"\n};\n```\n\nAnd create a `index.html` file. The script tag should point to your bundle. If `output.filename` is not specified in the config, this will be `bundle.js`.\n\n```html\n<!DOCTYPE html>\n<html>\n  <head>\n    <script src=\"/bundle.js\" charset=\"utf-8\"></script>\n  </head>\n  <body>\n    <h2>Heey!</h2>\n  </body>\n</html>\n```\n\nNote that you also need to create an `app.js` file.\n\n## Running the Server\n\nNow, let's run the server:\n\n```bash\nwebpack-dev-server --host 0.0.0.0 --public 10.10.10.61:8080 --watch-poll\n```\n\nBy default the server will only be accessible from localhost. We'll be accessing it from our host PC, so we need to change `--host` to allow this.\n\nwebpack-dev-server will include a script in your bundle that connects to a WebSocket to reload when a change in any of your files occurs.\nThe `--public` flag makes sure the script knows where to look for the WebSocket. The server will use port `8080` by default, so we should also specify that here.\n\n`--watch-poll` makes sure that webpack can detect changes in your files. By default webpack listens to events triggered by the filesystem, but VirtualBox has many problems with this.\n\nThe server should be accessible on `http://10.10.10.61:8080` now. If you make a change in `app.js`, it should live reload.\n\n## Advanced Usage with nginx\n\nTo mimic a more production-like environment, it is also possible to proxy the webpack-dev-server with nginx.\n\nIn your nginx config file, add the following:\n\n```nginx\nserver {\n  location / {\n    proxy_pass http://127.0.0.1:8080;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n    error_page 502 @start-webpack-dev-server;\n  }\n\n  location @start-webpack-dev-server {\n    default_type text/plain;\n    return 502 \"Please start the webpack-dev-server first.\";\n  }\n}\n```\n\nThe `proxy_set_header` lines are important, because they allow the WebSockets to work correctly.\n\nThe command to start webpack-dev-server can then be changed to this:\n\n```bash\nwebpack-dev-server --public 10.10.10.61 --watch-poll\n```\n\nThis makes the server only accessible on `127.0.0.1`, which is fine, because nginx takes care of making it available on your host PC.\n\n## Conclusion\n\nWe made the Vagrant box accessible from a static IP, and then made webpack-dev-server publicly accessible so it is reachable from a browser. We then tackled a common problem that VirtualBox doesn't send out filesystem events, causing the server to not reload on file changes.\n"
 	};
 
-/***/ },
-/* 258 */
-/***/ function(module, exports) {
+/***/ }),
+/* 262 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Development",
@@ -42463,9 +43203,9 @@ module.exports =
 		"__content": "\n\nOn this page we'll explain how to get started with developing and how to choose one of three tools to develop. It is assumed you already have a webpack configuration file.\n\nW> Never use any of these tools in production. Ever.\n\n## Adjusting Your Text Editor\n\nSome text editors have a \"safe write\" feature and enable this by default. As a result, saving a file will not always result in a recompile.\n\nEach editor has a different way of disabling this. For the most common ones:\n\n* **Sublime Text 3** - Add `\"atomic_save\": false` to your user preferences.\n* **IntelliJ** - use search in the preferences to find \"safe write\" and disable it.\n* **Vim** - add `:set backupcopy=yes` in your settings.\n* **WebStorm** - uncheck `Use \"safe write\"` in Preferences > Appearance & Behavior > System Settings\n\n## Source Maps\n\nWhen a JavaScript exception occurs, you'll often want to know what file and line is generating this error. Since webpack outputs files into one or more bundles, it can be inconvenient to trace the file.\n\n**Source maps** intend to fix this problem. There are a lot of [different options](/configuration/devtool) - each with their own advantages and disadvantages. To get started, we'll use this one:\n\n```js\ndevtool: \"cheap-eval-source-map\"\n```\n\n## Choosing a Tool\n\nwebpack can be used with **watch mode**. In this mode webpack will watch your files, and recompile when they change.\n**webpack-dev-server** provides an easy to use development server with fast live reloading. If you already have a development server and want full flexibility, **webpack-dev-middleware** can be used as middleware.\n\nwebpack-dev-server and webpack-dev-middleware use in-memory compilation, meaning that the bundle will not be saved to disk. This makes compiling faster and results in less mess on your file system.\n\nIn most cases **you'll want to use webpack-dev-server**, since it's the easiest to get started with and offers much functionality out-of-the-box.\n\n### webpack Watch Mode\n\nwebpack's watch mode watches files for changes. If any change is detected, it'll run the compilation again.\n\nWe also want a nice progress bar while it's compiling. Let's run the command:\n\n```bash\nwebpack --progress --watch\n```\n\nMake a change in one of your files and hit save. You should see that it's recompiling.\n\nWatch mode makes no assumptions about a server, so you will need to provide your own. An easy server is [`serve`](https://github.com/tj/serve). After installing (`npm i serve -g`), you can execute it in the directory where the outputted files are:\n\n```bash\nserve\n```\n\nAfter each compilation, you will need to manually refresh your browser to see the changes.\n\n### webpack-dev-server\n\nwebpack-dev-server provides you with a server and live reloading. This is easy to setup.\n\nTo prepare, make sure you have a `index.html` file that points to your bundle. Assuming that `output.filename` is `bundle.js`:\n\n```html\n<script src=\"/bundle.js\"></script>\n```\n\nStart with installing `webpack-dev-server` from npm:\n\n```bash\nnpm install webpack-dev-server --save-dev\n```\n\nWhen it's done installing, you should be able to use `webpack-dev-server` like this:\n\n```bash\nwebpack-dev-server --open\n```\n\nT> If your console says it can't find the command, try running `node_modules/.bin/webpack-dev-server`. Optimally you would add the command to your `package.json`, like this: `\"scripts\": { \"start\": \"webpack-dev-server\" }`.\n\nThe command above should automatically open your browser on `http://localhost:8080`.\n\nMake a change in one of your files and hit save. You should see that the console is recompiling. After that's done, the page should be refreshed. If nothing happens in the console, you may need to fiddle with [`watchOptions`](/configuration/dev-server#devserver-watchoptions-).\n\nNow you have live reloading working, you can take it even a step further: Hot Module Replacement. This is an interface that makes it possible to swap modules **without a page refresh**. Find out how to [configure HMR](/guides/hmr-react).\n\nBy default **inline mode** is used. This mode injects the client - needed for live reloading and showing build errors - in your bundle. With inline mode you will get build errors and warnings in your DevTools console.\n\nwebpack-dev-server can do many more things such as proxying requests to your backend server. For more configuration options, see the [**devServer documentation**](/configuration/dev-server).\n\n### webpack-dev-middleware\n\nwebpack-dev-middleware works for connect-based middleware stacks. This can be useful if you already have a Node.js server or if you want to have full control over the server.\n\nThe middleware will cause webpack to compile files in-memory. When a compilation is running, it will delay the request to a file until the compilation is done.\n\nW> This is intended for advanced users. webpack-dev-server is much easier to use.\n\nStart with installing the dependencies from npm:\n\n```bash\nnpm install express webpack-dev-middleware --save-dev\n```\n\nAfter installing, you can use the middleware like this:\n\n```js\nvar express = require(\"express\");\nvar webpackDevMiddleware = require(\"webpack-dev-middleware\");\nvar webpack = require(\"webpack\");\nvar webpackConfig = require(\"./webpack.config\");\n\nvar app = express();\nvar compiler = webpack(webpackConfig);\n\napp.use(webpackDevMiddleware(compiler, {\n  publicPath: \"/\" // Same as `output.publicPath` in most cases.\n}));\n\napp.listen(3000, function () {\n  console.log(\"Listening on port 3000!\");\n});\n```\n\nDepending on what you've used in `output.publicPath` and `output.filename`, your bundle should now be available on `http://localhost:3000/bundle.js`.\n\nBy default, **watch mode** is used. It's also possible to use **lazy mode**, which will only recompile on a request to the entry point.\n\nTo compile only on a request to the entry `bundle.js`:\n\n```js\napp.use(webpackDevMiddleware(compiler, {\n  lazy: true,\n  filename: \"bundle.js\" // Same as `output.filename` in most cases.\n}));\n```\n\nThere are many more options you can use. For all configuration options, see the [**devServer documentation**](/configuration/dev-server).\n\n\n## References\n\n* [SurviveJS - Automatic Browser Refresh](http://survivejs.com/webpack/developing-with-webpack/automatic-browser-refresh/)\n"
 	};
 
-/***/ },
-/* 259 */
-/***/ function(module, exports) {
+/***/ }),
+/* 263 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Hot Module Replacement - React",
@@ -42479,18 +43219,18 @@ module.exports =
 		"__content": "\n\nAs explained in detail on the [concept page](/concepts/hot-module-replacement), Hot Module Replacement (HMR) exchanges, adds, or removes modules while an application is running without a page reload.\nHMR is particularly useful in applications using a single state tree,\nsince components are \"dumb\" and will reflect the latest application state, even\nafter their source is changed and they are replaced.\n\nThe approach described below uses Babel and\nReact, but these tools are not necessary for HMR to work.\n\nT> If you'd like to see examples of other approaches, please request them or better yet, [open up a PR with an addition](https://github.com/webpack/webpack.js.org).\n\n## Project Config\n\nThis guide will be demonstrating the use of HMR with Babel,\nReact, and PostCSS (using CSS Modules).\nTo follow along, please add the following dependencies to your `package.json`:\n\nTo use HMR, you'll need the following dependencies:\n\n```bash\nnpm install --save-dev babel-core@6.13.2 babel-loader@6.2.4 babel-preset-es2015@6.13.2 babel-preset-react@6.11.1 babel-preset-stage-2@6.13.0 css-loader@0.23.1 postcss-loader@0.9.1 react-hot-loader@3.0.0-beta.6 style-loader@0.13.1 webpack@2.1.0-beta.25 webpack-dev-server@2.1.0-beta.0\n```\n\nIn addition, for the purposes of this walkthrough, you'll need:\n\n```bash\nnpm install --save react@15.3.0 react-dom@15.3.0\n```\n\n\n### Babel Config\n\nYour `.babelrc` file should look like the following:\n\n```json\n{\n  \"presets\": [\n    [\"es2015\", {\"modules\": false}],\n    // webpack understands the native import syntax, and uses it for tree shaking\n\n    \"stage-2\",\n    // Specifies what level of language features to activate.\n    // Stage 2 is \"draft\", 4 is finished, 0 is strawman.\n    // See https://tc39.github.io/process-document/\n\n    \"react\"\n    // Transpile React components to JavaScript\n  ],\n  \"plugins\": [\n    \"react-hot-loader/babel\"\n    // Enables React code to work with HMR.\n  ]\n}\n```\n\n### webpack Config\n\nWhile there're many ways of setting up your webpack config - via API,\nvia multiple or single config files, etc - here is the basic information\nyou should have available.\n\n```js\nconst { resolve } = require('path');\nconst webpack = require('webpack');\n\nmodule.exports = {\n  entry: [\n    'react-hot-loader/patch',\n    // activate HMR for React\n\n    'webpack-dev-server/client?http://localhost:8080',\n    // bundle the client for webpack-dev-server\n    // and connect to the provided endpoint\n\n    'webpack/hot/only-dev-server',\n    // bundle the client for hot reloading\n    // only- means to only hot reload for successful updates\n\n\n    './index.js'\n    // the entry point of our app\n  ],\n  output: {\n    filename: 'bundle.js',\n    // the output bundle\n\n    path: resolve(__dirname, 'dist'),\n\n    publicPath: '/'\n    // necessary for HMR to know where to load the hot update chunks\n  },\n\n  context: resolve(__dirname, 'src'),\n\n  devtool: 'inline-source-map',\n\n  devServer: {\n    hot: true,\n    // enable HMR on the server\n\n    contentBase: resolve(__dirname, 'dist'),\n    // match the output path\n\n    publicPath: '/'\n    // match the output `publicPath`\n  },\n\n  module: {\n    rules: [\n      {\n        test: /\\.js$/,\n        use: [\n          'babel-loader',\n        ],\n        exclude: /node_modules/\n      },\n      {\n        test: /\\.css$/,\n        use: [\n          'style-loader',\n          'css-loader?modules',\n          'postcss-loader',\n        ],\n      },\n    ],\n  },\n\n  plugins: [\n    new webpack.HotModuleReplacementPlugin(),\n    // enable HMR globally\n\n    new webpack.NamedModulesPlugin(),\n    // prints more readable module names in the browser console on HMR updates\n  ],\n};\n```\n\nThere's a lot going on above, and not all of it is related to HMR.\nYou may benefit from reading the\n[webpack-dev-server options](/configuration/dev-server) and the [concept pages](/concepts).\n\nThe basic assumption here is that your JavaScript entry is located at `./src/index.js`\nand that you're using CSS Modules for your styling.\n\nPlease see the comments inline that explain each portion of the config. The main\nareas to look are the `devServer` key and the `entry` key. The `HotModuleReplacementPlugin` is\nalso necessary to include in the `plugins` array.\n\nThere are two modules included here for the purposes of this guide:\n\n- The `react-hot-loader` addition to the entry, as noted above, is necessary to enable\nHMR with React components.\n\n- The `NamedModulesPlugin` is a useful addition\nto better understand what modules are being updated when using HMR.\n\n\n### Code\n\nIn this guide, we're using the following files:\n\n```js\n// ./src/index.js\nimport React from 'react';\nimport ReactDOM from 'react-dom';\n\nimport { AppContainer } from 'react-hot-loader';\n// AppContainer is a necessary wrapper component for HMR\n\nimport App from './components/App';\n\nconst render = (Component) => {\n  ReactDOM.render(\n    <AppContainer>\n      <Component/>\n    </AppContainer>,\n    document.getElementById('root')\n  );\n};\n\nrender(App);\n\n// Hot Module Replacement API\nif (module.hot) {\n  module.hot.accept('./components/App', () => {\n    render(App)\n  });\n}\n```\n\n```js\n// ./src/components/App.js\nimport React from 'react';\nimport styles from './App.css';\n\nconst App = () => (\n  <div className={styles.app}>\n    <h2>Hello, </h2>\n  </div>\n);\n\nexport default App;\n```\n\n```css\n// ./src/components/App.css\n.app {\n    text-size-adjust: none;\n    font-family: helvetica, arial, sans-serif;\n    line-height: 200%;\n    padding: 6px 20px 30px;\n}\n```\n\nThe important thing to note in the code above is the `module` reference.\n\n1. webpack will expose `module.hot` to our code since we set `devServer: { hot: true }`;\n\n2. Thus we can use the `module.hot` hook to enable HMR for specific resources (Here's `App.js`). The most important API here is `module.hot.accept`, which specifies how to handle changes to specific dependencies.\n\n3. Note that because webpack 2 has built-in support for ES2015 modules, you won't need to re-require your root component in `module.hot.accept`. To make this work, you need to change the Babel ES2015 preset in `.babelrc` to be:\n  \n  ```\n  [\"es2015\", {\"modules\": false}]\n  ```\n  \n  like what we did in [Babel Config](#babel-config). Note that disabling Babel's module plugin is not only necessary for HMR. If you don't disable it you'll run into many other issues (see [Migrating from v1 to v2](/guides/migrating/#mixing-es2015-with-amd-and-commonjs) and [webpack-tree-shaking](http://www.2ality.com/2015/12/webpack-tree-shaking.html)).\n\n4. Note that if you're using ES6 modules in your webpack 2 configuration file, and you change your `.babelrc` file in #3 above, you either need to use `require` or create two `.babelrc` files (issue [here](https://github.com/webpack/webpack.js.org/issues/154)):\n  * One in the project root directory with `\"presets\": [\"es2015\"]\n  * One in the home directory for webpack to build. For this example, in `src/`.\n\nSo in this case, `module.hot.accept` will fire the `render` method whenever `src/components/App.js` or its dependencies are changed - which means the `render` method will also fire when the `App.css` is changed, since `App.css` is included in `App.js`.\n\n### index.html\n\nThis needs to be placed inside of `dist` in your project root. webpack-dev-server will not run without it.\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Example Index</title>\n</head>\n<body>\n  <div id=\"root\"></div>\n  <script src=\"bundle.js\"></script>\n</body>\n</html>\n\n```\n### Package.json\n\nFinally, we need to start up `webpack-dev-server` to bundle our code and see HMR in action.\nWe can use the following `package.json` entry:\n\n```json\n{\n  \"scripts\" : {\n    \"start\" : \"webpack-dev-server\"\n  }\n}\n```\n\nRun `npm start`, open up your browser to `http://localhost:8080`,\nand you should see the following entries printed in your console.log:\n\n```bash\ndev-server.js:49[HMR] Waiting for update signal from WDS…\nonly-dev-server.js:74[HMR] Waiting for update signal from WDS…\nclient?c7c8:24 [WDS] Hot Module Replacement enabled.\n```\n\nGo ahead and edit and save your `App.js` file.\nYou should see something like the following in your console.log:\n\n```bash\n[WDS] App updated. Recompiling…\nclient?c7c8:91 [WDS] App hot update…\ndev-server.js:45 [HMR] Checking for updates on the server…\nlog-apply-result.js:20 [HMR] Updated modules:\nlog-apply-result.js:22 [HMR]  - ./components/App.js\ndev-server.js:27 [HMR] App is up to date.\n```\n\nNote that HMR specifies the paths of the updated modules.\nThat's because we're using `NamedModulesPlugin`.\n"
 	};
 
-/***/ },
-/* 260 */
-/***/ function(module, exports) {
+/***/ }),
+/* 264 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Guides",
 		"__content": "\n\nThis section contains guides for understanding and mastering the wide variety of tools and features that webpack offers. The first is a simple guide that takes you through [installation](/guides/installation).\n\nThe guides get progressively more advanced as you go on. Most serve as a starting point, and once completed you should feel more comfortable diving into the actual [documentation](/configuration).\n"
 	};
 
-/***/ },
-/* 261 */
-/***/ function(module, exports) {
+/***/ }),
+/* 265 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Installation",
@@ -42501,9 +43241,9 @@ module.exports =
 		"__content": "\n\n### Pre-requisites\n\nWe assume you have `node` and `npm` already installed.\n\n### Global Installation\n\n``` bash\nnpm install webpack -g\n```\n\nThe `webpack` command is now available globally.\n\nHowever, this is not a recommended practice. This locks you down to a specific version of webpack and might fail in projects that use a different version. The next section tells you how to install webpack locally in a project.\n\n### Local Installation\n\n``` bash\nnpm install webpack --save-dev\n\nnpm install webpack@<version> --save-dev\n```\n\nIf you are using npm scripts in your project, npm will try to look for webpack installation in your local modules for which this installation technique is useful.\n\n```json\n\"scripts\": {\n\t\"start\": \"webpack --config mywebpack.config.js\"\n}\n```\n\nThis is standard and recommended practice.\n\nT> To run the local installation of webpack you can access its bin version as `node_modules/.bin/webpack`\n\n\n### Bleeding Edge\n\nIf you are enthusiastic about using the latest that webpack has to offer (beware - may be unstable), you can install directly from the webpack repository using\n\n``` bash\nnpm install webpack/webpack#<tagname/branchname>\n```\n"
 	};
 
-/***/ },
-/* 262 */
-/***/ function(module, exports) {
+/***/ }),
+/* 266 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Lazy Loading - React",
@@ -42515,9 +43255,9 @@ module.exports =
 		"__content": "\n\nA component can lazily load dependencies without its consumer knowing using higher order functions, or a consumer can lazily load its children without its children knowing using a component that takes a function and collection of modules, or some combination of both.\n\n## LazilyLoad Component\n\nLet's have a look at a consumer choosing to lazily load some components. The `importLazy` is simply a function that returns the `default` property, this is for Babel/ES2015 interoperability. If you don't need that you can omit the `importLazy` helper. The `importLazy` function simply returns whatever was exported as `export default` in the target module.\n\n```jsx\n<LazilyLoad modules={{\n  TodoHandler: () => importLazy(import('./components/TodoHandler')),\n  TodoMenuHandler: () => importLazy(import('./components/TodoMenuHandler')),\n  TodoMenu: () => importLazy(import('./components/TodoMenu')),\n}}>\n{({TodoHandler, TodoMenuHandler, TodoMenu}) => (\n  <TodoHandler>\n    <TodoMenuHandler>\n      <TodoMenu />\n    </TodoMenuHandler>\n  </TodoHandler>\n)}\n</LazilyLoad>\n```\n\n## Higher Order Component\n\nAs a component, you can also make sure your own dependencies are lazily loaded. This is useful if a component relies on a really heavy library. Let's say we have a Todo component that optionally supports code highlighting...\n\n```jsx\nclass Todo extends React.Component {\n  render() {\n    return (\n      <div>\n        {this.props.isCode ? <Highlight>{content}</Highlight> : content}\n      </div>\n    );\n  }\n}\n```\n\nWe could then make sure the expensive library powering the Highlight component is only loaded when we actually want to highlight some code:\n\n```jsx\n// Highlight.js\nclass Highlight extends React.Component {\n  render() {\n    const {Highlight} = this.props.highlight;\n    // highlight js is now on our props for use\n  }\n}\nexport LazilyLoadFactory(Highlight, {\n  highlight: () => import('highlight'),\n});\n```\n\nNotice how the consumer of Highlight component had no idea it had a dependency that was lazily loaded? Or that if a user had todos with no code we would never need to load highlight.js?\n\n\n## The Code\n\nSource code of the LazilyLoad component module which exports both the Component interface and the higher order component interface, as well as the importLazy function to make ES2015 defaults feel a bit more natural.\n\n```jsx\nimport React from 'react';\n\nclass LazilyLoad extends React.Component {\n\n  constructor() {\n    super(...arguments);\n    this.state = {\n      isLoaded: false,\n    };\n  }\n\n  componentDidMount() {\n    this._isMounted = true;\n    this.load();\n  }\n\n  componentDidUpdate(previous) {\n    if (this.props.modules === previous.modules) return null;\n    this.load();\n  }\n\n  componentWillUnmount() {\n    this._isMounted = false;\n  }\n\n  load() {\n    this.setState({\n      isLoaded: false,\n    });\n\n    const { modules } = this.props;\n    const keys = Object.keys(modules);\n\n    Promise.all(keys.map((key) => modules[key]()))\n      .then((values) => (keys.reduce((agg, key, index) => {\n        agg[key] = values[index];\n        return agg;\n      }, {})))\n      .then((result) => {\n        if (!this._isMounted) return null;\n        this.setState({ modules: result, isLoaded: true });\n      });\n  }\n\n  render() {\n    if (!this.state.isLoaded) return null;\n    return React.Children.only(this.props.children(this.state.modules));\n  }\n}\n\nLazilyLoad.propTypes = {\n  children: React.PropTypes.func.isRequired,\n};\n\nexport const LazilyLoadFactory = (Component, modules) => {\n  return (props) => (\n    <LazilyLoad modules={modules}>\n      {(mods) => <Component {...mods} {...props} />}\n    </LazilyLoad>\n  );\n};\n\nexport const importLazy = (promise) => (\n  promise.then((result) => result.default)\n);\n\nexport default LazilyLoad;\n```\n## Tips\n\n- By using the [bundle loader](https://github.com/webpack/bundle-loader) we can semantically name chunks to intelligently load groups of code.\n- Make sure if you are using the babel-preset-2015, to turn modules to false, this will allow webpack to handle modules.\n\n## Dependencies\n\n- ES2015 + JSX\n\n## References\n\n- [Higher Order Components](http://reactpatterns.com/#higher-order-component)\n- [react-modules](https://github.com/threepointone/react-modules)\n- [Function as Child Components](http://merrickchristensen.com/articles/function-as-child-components.html)\n- [Example Repository](https://github.com/iammerrick/how-to-lazy-load-react-webpack)\n- [Bundle Loader](https://github.com/webpack/bundle-loader)\n"
 	};
 
-/***/ },
-/* 263 */
-/***/ function(module, exports) {
+/***/ }),
+/* 267 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Migrating from v1 to v2",
@@ -42536,9 +43276,9 @@ module.exports =
 		"__content": "\n\n## `resolve.root`, `resolve.fallback`, `resolve.modulesDirectories`\n\nThese options were replaced by a single option `resolve.modules`. See [resolving](/configuration/resolve) for more usage.\n\n``` diff\n  resolve: {\n-   root: path.join(__dirname, \"src\")\n+   modules: [\n+     path.join(__dirname, \"src\"),\n+     \"node_modules\"\n+   ]\n  }\n```\n\n## `resolve.extensions`\n\nThis option no longer requires passing an empty string. This behavior was moved to `resolve.enforceExtension`. See [resolving](/configuration/resolve) for more usage.\n\n## `resolve.*`\n\nMore stuff was changed here. Not listed in detail as it's not commonly used. See [resolving](/configuration/resolve) for details.\n\n## `module.loaders` is now `module.rules`\n\nThe old loader configuration was superseded by a more powerful rules system, which allows configuration of loaders and more.\nFor compatibility reasons, the old `module.loaders` syntax is still valid and the old names are parsed.\nThe new naming conventions are easier to understand and are a good reason to upgrade the configuration to using `module.rules`.\n\n``` diff\n  module: {\n-   loaders: [\n+   rules: [\n      {\n        test: /\\.css$/,\n-       loaders: [\n+       use: [\n          {\n            loader: \"style-loader\"\n          },\n          {\n            loader: \"css-loader\",\n-           query: {\n+           options: {\n              modules: true\n            }\n          }\n        ]\n      },\n      {\n        test: /\\.jsx$/,\n        loader: \"babel-loader\", // Do not use \"use\" here\n        options: {\n          // ...\n        }\n      }\n    ]\n  }\n```\n\n## Chaining loaders\n\nLike in webpack v1, loaders can be chained to pass results from loader to loader. Using the [rule.use](/configuration/module#rule-use)\n configuration option, `use` can be set to a list of loaders.\nIn webpack v1, loaders were commonly chained with `!`. This style is only supported using the legacy option `module.loaders`.\n\n``` diff\n  module: {\n-   loaders: {\n+   rules: {\n      test: /\\.less$/,\n-     loader: \"style-loader!css-loader!less-loader\"\n+     use: [\n+       \"style-loader\",\n+       \"css-loader\",\n+       \"less-loader\"\n+     ]\n    }\n  }\n```\n\n## Automatic `-loader` module name extension removed\n\nIt is not possible anymore to omit the `-loader` extension when referencing loaders:\n\n``` diff\n  module: {\n    rules: [\n      {\n        use: [\n-         \"style\",\n+         \"style-loader\",\n-         \"css\",\n+         \"css-loader\",\n-         \"less\",\n+         \"less-loader\",\n        ]\n      }\n    ]\n  }\n```\n\nYou can still opt-in to the old behavior with the `resolveLoader.moduleExtensions` configuration option, but this is not recommended.\n\n``` diff\n+ resolveLoader: {\n+   moduleExtensions: [\"-loader\"]\n+ }\n```\n\nSee [#2986](https://github.com/webpack/webpack/issues/2986) for the reason behind this change.\n\n## `json-loader` is not required anymore\n\nWhen no loader has been configured for a JSON file, webpack will automatically try to load the JSON\nfile with the [json-loader](https://github.com/webpack/json-loader).\n\n``` diff\n  module: {\n    rules: [\n-     {\n-       test: /\\.json/,\n-       loader: \"json-loader\"\n-     }\n    ]\n  }\n```\n\n[We decided to do this](https://github.com/webpack/webpack/issues/3363) in order to iron out environment differences\n  between webpack, node.js and browserify.\n\n## Loaders in configuration resolve relative to context\n\nIn webpack 1 configured loaders resolve relative to the matched file.\nSince webpack 2 configured loaders resolve relative to the `context` option.\n\nThis solves some problems with duplicate modules caused by loaders when using `npm link` or referencing modules outside of the `context`.\n\nYou may remove some hacks to work around this:\n\n``` diff\n  module: {\n    rules: [\n      {\n        // ...\n-       loader: require.resolve(\"my-loader\")\n+       loader: \"my-loader\"\n      }\n    ]\n  },\n  resolveLoader: {\n-   root: path.resolve(__dirname, \"node_modules\")\n  }\n```\n\n## `module.preLoaders` and `module.postLoaders` was removed\n\n``` diff\n  module: {\n-   preLoaders: [\n+   rules: [\n      {\n        test: /\\.js$/,\n+       enforce: \"pre\",\n        loader: \"eslint-loader\"\n      }\n    ]\n  }\n```\n\n## `UglifyJsPlugin` sourceMap\n\nThe `sourceMap` option of the `UglifyJsPlugin` now defaults to `false` instead of `true`.\nThis means that if you are using source maps for minimized code or want correct line numbers for uglifyjs warnings, you need to set `sourceMap: true` for `UglifyJsPlugin`.\n\n``` diff\n  devtool: \"source-map\",\n  plugins: [\n    new UglifyJsPlugin({\n+     sourceMap: true\n    })\n  ]\n```\n\n## `UglifyJsPlugin` warnings\n\nThe `compress.warnings` option of the `UglifyJsPlugin` now defaults to `false` instead of `true`.\nThis means that if you want to see uglifyjs warnings, you need to set `compress.warnings` to `true`.\n\n``` diff\n  devtool: \"source-map\",\n  plugins: [\n    new UglifyJsPlugin({\n+     compress: {\n+       warnings: true\n+     }\n    })\n  ]\n```\n\n## `UglifyJsPlugin` minimize loaders\n\n`UglifyJsPlugin` no longer switches loaders into minimize mode. The `minimize: true` setting needs to be passed via loader options in long-term. See loader documentation for relevant options.\n\nThe minimize mode for loaders will be removed in webpack 3 or later.\n\nTo keep compatibility with old loaders, loaders can be switched to minimize mode via plugin:\n\n``` diff\n  plugins: [\n+   new webpack.LoaderOptionsPlugin({\n+     minimize: true\n+   })\n  ]\n```\n\n## `DedupePlugin` has been removed\n\n`webpack.optimize.DedupePlugin` isn't needed anymore. Remove it from your configuration.\n\n## `BannerPlugin` - breaking change\n\n`BannerPlugin` no longer accept two parameters but rather only a single options object.\n\n``` diff\n  plugins: [\n-    new webpack.BannerPlugin('Banner', {raw: true, entryOnly: true});\n+    new webpack.BannerPlugin({banner: 'Banner', raw: true, entryOnly: true});\n  ]\n```\n\n## `OccurrenceOrderPlugin` is now on by default\n\nIt's no longer necessary to specify it in configuration.\n\n``` diff\n  plugins: [\n-   new webpack.optimize.OccurrenceOrderPlugin()\n  ]\n```\n\n## `ExtractTextWebpackPlugin` - breaking change\n\n[ExtractTextPlugin](https://github.com/webpack/extract-text-webpack-plugin) 1.0.0 does not work with webpack v2. You will need to install ExtractTextPlugin v2 explicitly.\n\n`npm install --save-dev extract-text-webpack-plugin@beta`\n\n The configuration changes for this plugin are mainly syntactical.\n\n### `ExtractTextPlugin.extract`\n\n```diff\nmodule: {\n  rules: [\n    test: /.css$/,\n-    loader: ExtractTextPlugin.extract(\"style-loader\", \"css-loader\", { publicPath: \"/dist\" })\n+    loader: ExtractTextPlugin.extract({\n+      fallbackLoader: \"style-loader\",\n+      loader: \"css-loader\",\n+      publicPath: \"/dist\"\n+    })\n  ]\n}\n```\n\n### `new ExtractTextPlugin({options})`\n\n```diff\nplugins: [\n-  new ExtractTextPlugin(\"bundle.css\", { allChunks: true, disable: false })\n+  new ExtractTextPlugin({\n+    filename: \"bundle.css\",\n+    disable: false,\n+    allChunks: true\n+  })\n]\n```\n\n## Full dynamic requires now fail by default\n\nA dependency with only an expression (i. e. `require(expr)`) will now create an empty context instead of an context of the complete directory.\n\nBest refactor this code as it won't work with ES2015 Modules. If this is not possible you can use the `ContextReplacementPlugin` to hint the compiler to the correct resolving.\n\n?> Link to an article about dynamic dependencies.\n\n### Using custom arguments in CLI and configuration\n\nIf you abused the CLI to pass custom arguments to the configuration like so:\n\n`webpack --custom-stuff`\n\n``` js\n// webpack.config.js\nvar customStuff = process.argv.indexOf(\"--custom-stuff\") >= 0;\n/* ... */\nmodule.exports = config;\n```\n\nYou may notice that this is no longer allowed. The CLI is more strict now.\n\nInstead there is an interface for passing arguments to the configuration. This should be used instead. Future tool may rely on this.\n\n`webpack --env.customStuff`\n\n``` js\nmodule.exports = function(env) {\n  var customStuff = env.customStuff;\n  /* ... */\n  return config;\n};\n```\n\nSee [CLI](/api/cli).\n\n## `require.ensure` and AMD `require` is asynchronous\n\nThese functions are now always asynchronous instead of calling their callback sync if the chunk is already loaded.\n\n**nb `require.ensure` now depends upon native `Promise`s. If using `require.ensure` in an environment that lacks them then you will need a polyfill. **\n\n## Loader configuration is through `options`\n\nYou can *no longer* configure a loader with a custom property in the `webpack.config.js`. It must be done through the `options`. The following configuration with the `ts` property is no longer valid with webpack 2:\n\n```js\nmodule.exports = {\n  ...\n  module: {\n    rules: [{\n      test: /\\.tsx?$/,\n      loader: 'ts-loader'\n    }]\n  },\n  // does not work with webpack 2\n  ts: { transpileOnly: false }\n}\n```\n\n### What are `options`?\n\nGood question. Well, strictly speaking it's 2 possible things; both ways to configure a webpack loader. Classically `options` was called `query` and was a string which could be appended to the name of the loader. Much like a query string but actually with [greater powers](https://github.com/webpack/loader-utils#parsequery):\n\n```js\nmodule.exports = {\n  ...\n  module: {\n    rules: [{\n      test: /\\.tsx?$/,\n      loader: 'ts-loader?' + JSON.stringify({ transpileOnly: false })\n    }]\n  }\n}\n```\n\nBut it can also be a separately specified object that's supplied alongside a loader:\n\n```js\nmodule.exports = {\n  ...\n  module: {\n    rules: [{\n      test: /\\.tsx?$/,\n      loader: 'ts-loader',\n      options:  { transpileOnly: false }\n    }]\n  }\n}\n```\n\n## `LoaderOptionsPlugin` context\n\nSome loaders need context information and read them from the configuration. This need to be passed via loader options in long-term. See loader documentation for relevant options.\n\nTo keep compatibility with old loaders, this information can be passed via plugin:\n\n``` diff\n  plugins: [\n+   new webpack.LoaderOptionsPlugin({\n+     options: {\n+       context: __dirname\n+     }\n+   })\n  ]\n```\n\n## `debug`\n\nThe `debug` option switched loaders to debug mode in webpack 1. This need to be passed via loader options in long-term. See loader documentation for relevant options.\n\nThe debug mode for loaders will be removed in webpack 3 or later.\n\nTo keep compatibility with old loaders, loaders can be switched to debug mode via plugin:\n\n``` diff\n- debug: true,\n  plugins: [\n+   new webpack.LoaderOptionsPlugin({\n+     debug: true\n+   })\n  ]\n```\n\n## Code Splitting with ES2015\n\nIn webpack v1, you could use `require.ensure` as a method to lazily-load chunks for your application:\n\n```javascript\nrequire.ensure([], function(require) {\n  var foo = require(\"./module\");\n});\n```\n\nThe ES2015 Loader spec defines `import()` as method to load ES2015 Modules dynamically on runtime.\n\nwebpack treats `import()` as a split-point and puts the requested module in a separate chunk.\n\n`import()` takes the module name as argument and returns a Promise.\n\n``` js\nfunction onClick() {\n  import(\"./module\").then(module => {\n    return module.default;\n  }).catch(err => {\n    console.log(\"Chunk loading failed\");\n  });\n}\n```\n\nGood news: Failure to load a chunk can be handled now because they are `Promise` based.\n\nCaveat: `require.ensure` allows for easy chunk naming with the optional third argument, but `import` API doesn't offer that capability yet. If you want to keep that functionality, you can continue using `require.ensure`.\n\n```javascript\nrequire.ensure([], function(require) {\n  var foo = require(\"./module\");\n}, \"custom-chunk-name\");\n```\n\n(Note on the deprecated `System.import`: webpack's use of `System.import` didn't fit the proposed spec, so it was deprecated in [v2.1.0-beta.28](https://github.com/webpack/webpack/releases/tag/v2.1.0-beta.28) in favor of `import()`)\n\nIf you want to use `import` with [Babel](http://babeljs.io/), you'll need to install/add the [dynamic-import](http://babeljs.io/docs/plugins/syntax-dynamic-import/) syntax plugin while it's still Stage 3 to get around the parser error. When the proposal is added to the spec this won't be necessary anymore.\n\n## Dynamic expressions\n\nIt's possible to pass a partial expression to `import()`. This is handled similar to expressions in CommonJS (webpack creates a [context](https://webpack.github.io/docs/context.html) with all possible files).\n\n`import()` creates a separate chunk for each possible module.\n\n``` js\nfunction route(path, query) {\n  return import(`./routes/${path}/route`)\n    .then(route => new route.Route(query));\n}\n// This creates a separate chunk for each possible route\n```\n\n## Mixing ES2015 with AMD and CommonJS\n\nAs for AMD and CommonJS you can freely mix all three module types (even within the same file). webpack behaves similar to babel and node-eps in this case:\n\n```javascript\n// CommonJS consuming ES2015 Module\nvar book = require(\"./book\");\n\nbook.currentPage;\nbook.readPage();\nbook.default === \"This is a book\";\n```\n\n```javascript\n// ES2015 Module consuming CommonJS\nimport fs from \"fs\"; // module.exports map to default\nimport { readFileSync } from \"fs\"; // named exports are read from returned object+\n\ntypeof fs.readFileSync === \"function\";\ntypeof readFileSync === \"function\";\n```\n\nIt is important to note that you will want to tell Babel to not parse these module symbols so webpack can use them. You can do this by setting the following in your `.babelrc` or babel-loader options.\n\n**.babelrc**\n\n```json\n{\n  \"presets\": [\n    [\"es2015\", { \"modules\": false }]\n  ]\n}\n```\n\n## Hints\n\nNo need to change something, but opportunities\n\n### Template strings\n\nwebpack now supports template strings in expressions. This means you can start using them in webpack constructs:\n\n``` diff\n- require(\"./templates/\" + name);\n+ require(`./templates/${name}`);\n```\n\n### Configuration Promise\n\nwebpack now supports returning a `Promise` from the configuration file. This allows to do async processing in you configuration file.\n\n**webpack.config.js**\n\n``` js\nmodule.exports = function() {\n  return fetchLangs().then(lang => ({\n    entry: \"...\",\n    // ...\n    plugins: [\n      new DefinePlugin({ LANGUAGE: lang })\n    ]\n  }));\n};\n```\n\n### Advanced loader matching\n\nwebpack now supports more things to match on for loaders.\n\n``` js\nmodule: {\n  rules: [\n    {\n      resource: /filename/, // matches \"/path/filename.js\"\n      resourceQuery: /querystring/, // matches \"/filename.js?querystring\"\n      issuer: /filename/, // matches \"/path/something.js\" if requested from \"/path/filename.js\"\n    }\n  ]\n}\n```\n\n### More CLI options\n\nThere are some new CLI options for you to use:\n\n`--define process.env.NODE_ENV=\"production\"` See [`DefinePlugin`](/plugins/define-plugin/).\n\n`--display-depth` displays the distance to the entry point for each module.\n\n`--display-used-exports` display info about which exports are used in a module.\n\n`--display-max-modules` sets the number for modules displayed in the output (defaults to 15).\n\n`-p` also defines `process.env.NODE_ENV` to `\"production\"` now.\n\n## Loader changes\n\nChanges only relevant for loader authors.\n\n### Cacheable\n\nLoaders are now cacheable by default. Loaders must opt-out if they are not cacheable.\n\n``` diff\n  // Cacheable loader\n  module.exports = function(source) {\n-   this.cacheable();\n    return source;\n  }\n```\n\n``` diff\n  // Not cacheable loader\n  module.exports = function(source) {\n+   this.cacheable(false);\n    return source;\n  }\n```\n\n### Complex options\n\nwebpack 1 only support `JSON.stringify`-able options for loaders.\nwebpack 2 now supports any JS object as loader options.\n\nUsing complex options comes with one restriction. You may need to have a `ident` for the option object to make it referenceable by other loaders.\n\nHaving an `ident` on the options object means to be able to reference this options object in inline loaders. Here is an example:\n\n`require(\"some-loader??by-ident!resource\")`\n\n``` js\n{\n  test: /.../,\n  loader: \"...\",\n  options: {\n    ident: \"by-ident\",\n    magic: () => return Math.random()\n  }\n}\n```\n\nThis inline style should not be used by regular code, but it's often used by loader generated code.\nI. e. the style-loader generates a module that `require`s the remaining request (which exports the CSS).\n\n``` js\n// style-loader generated code (simplified)\nvar addStyle = require(\"./add-style\");\nvar css = require(\"-!css-loader?{\"modules\":true}!postcss-loader??postcss-ident\");\n\naddStyle(css);\n```\n\nSo if you use complex options tell your users about the `ident`.\n"
 	};
 
-/***/ },
-/* 264 */
-/***/ function(module, exports) {
+/***/ }),
+/* 268 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Building for Production",
@@ -42555,9 +43295,9 @@ module.exports =
 		"__content": "\n\nThis page explains how to generate production builds with webpack.\n\n## The automatic way\n\nRunning `webpack -p` (or equivalently `webpack --optimize-minimize --define process.env.NODE_ENV=\"'production'\"`). This performs the following steps:\n\n- Minification using `UglifyJsPlugin`\n- Runs the `LoaderOptionsPlugin`, see its [documentation](/plugins/loader-options-plugin)\n- Sets the Node environment variable\n\n### Minification\n\nwebpack comes with `UglifyJsPlugin`, which runs [UglifyJS](http://lisperator.net/uglifyjs/) in order to minimize the output. The plugin supports all of [UglifyJS options](https://github.com/mishoo/UglifyJS2#usage). Specifying `--optimize-minimize` on the command line, the following plugin configuration is added:\n\n```js\n// webpack.config.js\nconst webpack = require('webpack');\n\nmodule.exports = {\n  /*...*/\n  plugins:[\n    new webpack.optimize.UglifyJsPlugin({\n      sourceMap: options.devtool && (options.devtool.indexOf(\"sourcemap\") >= 0 || options.devtool.indexOf(\"source-map\") >= 0)\n    })\n  ]\n};\n```\n\nThus, depending on the [devtool options](/configuration/devtool), Source Maps are generated.\n\n### Source Maps\n\nWe encourage you to have Source Maps enabled in production. They are useful for debugging and to run benchmark tests. webpack can generate inline Source Maps included in the bundles or separated files.\n\nIn your configuration, use the `devtools` object to set the Source Map type. We currently support seven types of Source Maps. You can find more information about them in our [configuration](/configuration/devtool) documentation page.\n\nOne of the good options to go is using `cheap-module-source-map` which simplifies the Source Maps to a single mapping per line.\n\n### Node environment variable\n\nRunning `webpack -p` (or `--define process.env.NODE_ENV=\"production\"`) invokes the [`DefinePlugin`](/plugins/define-plugin) in the following way:\n\n```js\n// webpack.config.js\nconst webpack = require('webpack');\n\nmodule.exports = {\n  /*...*/\n  plugins:[\n    new webpack.DefinePlugin({\n      'process.env.NODE_ENV': JSON.stringify('production')\n    })\n  ]\n};\n```\n\nThe `DefinePlugin` performs search-and-replace operations on the original source code. Any occurrence of `process.env.NODE_ENV` in the imported code is replaced by by `\"production\"`. Thus, checks like `if (process.env.NODE_ENV !== 'production') console.log('...')` are evaluated to `if (false) console.log('...')` and finally minified away using `UglifyJS`.\n\nT> Technically, `NODE_ENV` is a system environment variable that Node.js exposes into running scripts. It is used by convention to determine development-vs-production behavior, by both server tools, build scripts, and client-side libraries. Contrary to expectations, `process.env.NODE_ENV` is not set to `\"production\"` __within__ the build script `webpack.config.js`, see [#2537](https://github.com/webpack/webpack/issues/2537). Thus, conditionals like `process.env.NODE_ENV === 'production' ? '[name].[hash].bundle.js' : '[name].bundle.js'` do not work as expected.\n\n## The manual way: Configuring webpack for multiple environments\n\nWhen we do have multiple configurations in mind for different environments, the easiest way is to write separate js files for\neach environment. For example:\n\n** dev.js **\n```js\nmodule.exports = function (env) {\n  return {\n    devtool: 'cheap-module-source-map',\n    output: {\n        path: path.join(__dirname, '/../dist/assets'),\n        filename: '[name].bundle.js',\n        publicPath: publicPath,\n        sourceMapFilename: '[name].map'\n    },\n    devServer: {\n        port: 7777,\n        host: 'localhost',\n        historyApiFallback: true,\n        noInfo: false,\n        stats: 'minimal',\n        publicPath: publicPath\n    }\n  }\n}\n```\n\n** prod.js **\n```js\nmodule.exports = function (env) {\n  return {\n    output: {\n        path: path.join(__dirname, '/../dist/assets'),\n        filename: '[name].bundle.js',\n        publicPath: publicPath,\n        sourceMapFilename: '[name].map'\n    },\n    plugins: [\n        new webpack.LoaderOptionsPlugin({\n            minimize: true,\n            debug: false\n        }),\n        new UglifyJsPlugin({\n            beautify: false,\n            mangle: {\n                screw_ie8: true,\n                keep_fnames: true\n            },\n            compress: {\n                screw_ie8: true\n            },\n            comments: false\n        })\n    ]\n  }\n}\n```\nHave the following snippet in your webpack.config.js:\n```js\nfunction buildConfig(env) {\n  return require('./config/' + env + '.js')({ env: env })\n}\n\nmodule.exports = buildConfig;\n```\nAnd from our package.json, where we build our application using webpack, the command goes like this:\n```js\n \"build:dev\": \"webpack --env=dev --progress --profile --colors\",\n \"build:dist\": \"webpack --env=prod --progress --profile --colors\",\n```\n\nYou could see that we passed the environment variable to our webpack.config.js file. From there we used a simple\nswitch-case to build for the environment we passed by simply loading the right js file.\n\nAn advanced approach would be to have a base configuration file, put in all common functionalities,\nand then have environment specific files and simply use 'webpack-merge' to merge them. This would help to avoid code repetitions.\nFor example, you could have all your base configurations like resolving your js, ts, png, jpeg, json and so on.. in a common base file as follows:\n\n** base.js **\n```js\nmodule.exports = function() {\n    return {\n        entry: {\n            'polyfills': './src/polyfills.ts',\n            'vendor': './src/vendor.ts',\n            'main': './src/main.ts'\n\n        },\n        output: {\n            path: path.join(__dirname, '/../dist/assets'),\n            filename: '[name].bundle.js',\n            publicPath: publicPath,\n            sourceMapFilename: '[name].map'\n        },\n        resolve: {\n            extensions: ['', '.ts', '.js', '.json'],\n            modules: [path.join(__dirname, 'src'), 'node_modules']\n\n        },\n        module: {\n            loaders: [{\n                test: /\\.ts$/,\n                loaders: [\n                    'awesome-typescript-loader',\n                    'angular2-template-loader'\n                ],\n                exclude: [/\\.(spec|e2e)\\.ts$/]\n            }, {\n                test: /\\.css$/,\n                loaders: ['to-string-loader', 'css-loader']\n            }, {\n                test: /\\.(jpg|png|gif)$/,\n                loader: 'file-loader'\n            }, {\n                test: /\\.(woff|woff2|eot|ttf|svg)$/,\n                loader: 'url-loader?limit=100000'\n            }],\n        },\n        plugins: [\n            new ForkCheckerPlugin(),\n\n            new webpack.optimize.CommonsChunkPlugin({\n                name: ['polyfills', 'vendor'].reverse()\n            }),\n            new HtmlWebpackPlugin({\n                template: 'src/index.html',\n                chunksSortMode: 'dependency'\n            })\n        ],\n    };\n}\n```\nAnd then merge this base config with an environment specific configuration file using 'webpack-merge'.\nLet us look at an example where we merge our prod file, mentioned above, with this base config file using 'webpack-merge':\n\n** prod.js (updated) **\n```js\nconst webpackMerge = require('webpack-merge');\n\nconst commonConfig = require('./base.js');\n\nmodule.exports = function(env) {\n    return webpackMerge(commonConfig(), {\n        plugins: [\n            new webpack.LoaderOptionsPlugin({\n                minimize: true,\n                debug: false\n            }),\n            new webpack.DefinePlugin({\n                'process.env': {\n                    'NODE_ENV': JSON.stringify('prod')\n                }\n            }),\n            new webpack.optimize.UglifyJsPlugin({\n                beautify: false,\n                mangle: {\n                    screw_ie8: true,\n                    keep_fnames: true\n                },\n                compress: {\n                    screw_ie8: true\n                },\n                comments: false\n            })\n        ]\n    })\n}\n```\nYou will notice three major updates to our 'prod.js' file.\n* 'webpack-merge' with the 'base.js'.\n* We have move 'output' property to 'base.js'. Just to stress on that point that our output property, here, is common across all our environments and that we refactored our 'prod.js' and moved it to our 'base.js', the common configuration file.\n* We have defined the 'process.env.NODE_ENV' to be 'prod' using the 'DefinePlugin'. Now across the application 'process.env.NODE_ENV' would have the value, 'prod', when we build our application for production environment. Likewise we can manage various variables of our choice, specific to environments this way.\n\nThe choice of what is going to be common across all your environments is up to you, however. We have just demonstrated a few that could typically be common across environments when we build our application.\n\nYou just saw, how powerful 'webpack-merge' is, that, it just saved us from a lot of code repetitions.\n"
 	};
 
-/***/ },
-/* 265 */
-/***/ function(module, exports) {
+/***/ }),
+/* 269 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Public Path",
@@ -42569,9 +43309,9 @@ module.exports =
 		"__content": "\n\nwebpack has a highly useful configuration that let you specify the base path for\nall the assets on your application. It's called `publicPath`.\n\n## Use cases\n\nThere are a few use cases on real applications where this feature becomes\nespecially neat.\n\n### Set value on build time\n\nFor development mode what we usually have is an `assets/` folder that lives on\nthe same level of our index page. This is fine but let's say you want to host\nall these static assets on a CDN on your production environment?\n\nTo approach this problem you can easily use a good old environment variable.\nLet's say we have a variable `ASSET_PATH`:\n\n```js\nimport webpack from 'webpack';\n\n// Whatever comes as an environment variable, otherwise use root\nconst ASSET_PATH = process.env.ASSET_PATH || '/';\n\nexport default {\n  output: {\n    publicPath: ASSET_PATH\n  },\n\n  plugins: [\n    // This makes it possible for us to safely use env vars on our code\n    new webpack.DefinePlugin({\n      'process.env.ASSET_PATH': JSON.stringify(ASSET_PATH)\n    })\n  ]\n};\n```\n\n### Set value on the fly\n\nAnother possible use case is to set the public path on the fly. webpack exposes\na global variable that let's you do that, it's called `__webpack_public_path__`.\nSo in your application entry point, you can simply do this:\n\n```js\n__webpack_public_path__ = process.env.ASSET_PATH;\n```\n\nThat's all you need. Since we're already using the `DefinePlugin` on our\nconfiguration, `process.env.ASSET_PATH` will always be defined so we can safely\ndo that.\n"
 	};
 
-/***/ },
-/* 266 */
-/***/ function(module, exports) {
+/***/ }),
+/* 270 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Shimming",
@@ -42584,9 +43324,9 @@ module.exports =
 		"__content": "\n\n`webpack` as a module bundler can understand modules written as ES2015 modules, CommonJS or AMD. But many times, while using third party libraries, we see that they expect dependencies which are global, AKA `$` for `jquery`. They might also be creating global variables which need to be exported. Here we will see different ways to help webpack understand these __broken modules__.\n\n## Prefer unminified CommonJS/AMD files over bundled `dist` versions.\n\nMost modules link the `dist` version in the `main` field of their `package.json`. While this is useful for most developers, for webpack it is better to alias the src version because this way webpack is able to optimize dependencies better. However in most cases `dist` works fine as well.\n\n``` javascript\n// webpack.config.js\n\nmodule.exports = {\n    ...\n    resolve: {\n        alias: {\n            jquery: \"jquery/src/jquery\"\n        }\n    }\n};\n```\n\n## `provide-plugin`\nThe [`provide-plugin`](/plugins/provide-plugin) makes a module available as a variable in every other module required by `webpack`. The module is required only if you use the variable.\nMost legacy modules rely on the presence of specific globals, like jQuery plugins do on `$` or `jQuery`. In this scenario, you can configure webpack to prepend `var $ = require(“jquery”)` every time it encounters the global `$` identifier.\n\n```javascript\nmodule.exports = {\n  plugins: [\n    new webpack.ProvidePlugin({\n      $: 'jquery',\n      jQuery: 'jquery'\n    })\n  ]\n};\n```\n\n## `imports-loader`\n\n[`imports-loader`](/loaders/imports-loader/) inserts necessary globals into the required legacy module.\nFor example, Some legacy modules rely on `this` being the `window` object. This becomes a problem when the module is executed in a CommonJS context where `this` equals `module.exports`. In this case you can override `this` using the `imports-loader`.\n\n**webpack.config.js**\n```javascript\nmodule.exports = {\n  module: {\n    rules: [{\n      test: require.resolve(\"some-module\"), \n      use: 'imports-loader?this=>window'\n    }]\n  }\n};\n```\n\nThere are modules that support different [module styles](/concepts/modules), like AMD, CommonJS and legacy. However, most of the time they first check for `define` and then use some quirky code to export properties. In these cases, it could help to force the CommonJS path by setting `define = false`:\n\n**webpack.config.js**\n```javascript\nmodule.exports = {\n  module: {\n    rules: [{\n      test: require.resolve(\"some-module\"), \n      use: 'imports-loader?define=>false'\n    }]\n  }\n};\n```\n\n## `exports-loader`\n\nLet's say a library creates a global variable that it expects its consumers to use; In this case, we can use [`exports-loader`](/loaders/exports-loader/), to export that global variable in CommonJS format. For instance, in order to export `file` as `file` and `helpers.parse` as `parse`:\n\n**webpack.config.js**\n```javascript\nmodule.exports = {\n  module: {\n    rules: [{\n      test: require.resolve(\"some-module\"), \n      use: 'exports-loader?file,parse=helpers.parse'\n      // adds below code the file's source:\n      //  exports[\"file\"] = file;\n      //  exports[\"parse\"] = helpers.parse;\n    }]\n  }\n};\n```\n\n## `script-loader`\n\nThe [script-loader](/loaders/script-loader/) evaluates code in the global context, just like you would add the code into a `script` tag. In this mode, every normal library should work. `require`, `module`, etc. are undefined.\n\nW> The file is added as string to the bundle. It is not minimized by `webpack`, so use a minimized version. There is also no dev tool support for libraries added by this loader.\n\nAssuming you have a `legacy.js` file containing …\n```javascript\nGLOBAL_CONFIG = {};\n```\n\n… using the `script-loader` …\n\n```javascript\nrequire('script-loader!legacy.js');\n``` \n\n… basically yields:\n\n```javascript\neval(\"GLOBAL_CONFIG = {};\");\n```\n\n## `noParse` option\n\nWhen there is no AMD/CommonJS version of the module and you want to include the `dist`, you can flag this module as [`noParse`](/configuration/module/#module-noparse). Then `webpack` will just include the module without parsing it, which can be used to improve the build time. \n\nW> Any feature requiring the AST, like the `ProvidePlugin`, will not work.\n\n```javascript\nmodule.exports = {\n  module: {\n    noParse: /jquery|backbone/\n  }\n};\n```\n"
 	};
 
-/***/ },
-/* 267 */
-/***/ function(module, exports) {
+/***/ }),
+/* 271 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "webpack & Typescript",
@@ -42597,27 +43337,27 @@ module.exports =
 		"__content": "\n\n[TypeScript](https://www.typescriptlang.org) is a typed superset of JavaScript that compiles to plain JavaScript, in this guide we will learn how to integrate Typescript with webpack.\n\n## Basic Setup\n\nIn order to get started with webpack and Typescript, first we must install webpack in our project.\nIf you didn't do so already please check out [webpack Installation Guide](https://webpack.js.org/guides/installation/).\n\nTo start using webpack with Typescript you need a couple of things:\n1. Install the Typescript compiler in your project.\n2. Install a Typescript loader (in this case we're using ts-loader).\n3. Create a __tsconfig.json__ file to contain our TypeScript compilation configuration.\n3. Create __webpack.config.js__ to contain our webpack configuration.\n\nYou can install the TypeScript compiler and the TypeScript loader from npm by running:\n `npm install --save-dev typescript ts-loader`\n \n__tsconfig.json__ \n\nThe tsconfig file can start as an empty configuration file, here you can see an example of a basic configuration for TypeScript to compile to es5 as well as providing support for JSX.\n\n```json\n{\n  \"compilerOptions\": {\n    \"outDir\": \"./dist/\",\n    \"sourceMap\": true,\n    \"noImplicitAny\": true,\n    \"module\": \"commonjs\",\n    \"target\": \"es5\",\n    \"jsx\": \"react\",\n    \"allowJs\": true\n  }\n}\n```\n\nYou can read more about tsconfig.json configuration options at the [TypeScript documentation website](https://www.typescriptlang.org/docs/handbook/tsconfig-json.html)\n\n__webpack.config.js__\n\nA basic webpack with TypeScript config should look along these lines:\n```js\nmodule.exports = {\n entry: './index.ts',\n output: {\n   filename: '/bundle.js',\n   path: '/'\n },\n module: {\n   rules: [\n     {\n       test: /\\.tsx?$/,\n       loader: 'ts-loader',\n       exclude: /node_modules/,\n     },\n   ]\n }, \n resolve: {\n   extensions: [\".tsx\", \".ts\", \".js\"]\n },\n};\n```\n \nHere we specify our entry point to be __index.ts__ in our current directory, \nan output file called __bundle.js__ \nand our TypeScript loader that is in charge of compiling our TypeScript file to JavaScript. We also add `resolve.extensions` to instruct webpack what file extensions to use when resolving Typescript modules.\n\n## Typescript loaders\n\nCurrently there are 2 loaders for TypeScript available:\n* [awesome-typescript-loader](https://github.com/s-panferov/awesome-typescript-loader)\n* [ts-loader](https://github.com/TypeStrong/ts-loader)\n\nAwesome TypeScript loader has created a wonderful explanation of the \ndifference between awesome-typescript-loader and ts-loader. \n\nYou can read more about it [here](https://github.com/s-panferov/awesome-typescript-loader#differences-between-ts-loader).\n\nIn this guide we will be using ts-loader as currently it is easier enabling additional webpack features such as importing non code assets into your project.\n\n## Enabling source maps\n\nIn order to enable source maps we first must configure TypeScript to output inline source maps to our compiled JavaScript files.\nThis is done by setting the sourceMap property to true.\n \n__tsconfig.json__\n```json\n{\n  \"sourceMap\": true\n}\n```\n\nOnce TypeScript is configured to output source maps we need to tell webpack \nto extract these source maps and pass them to the browser, this way we will get the source file\nexactly as we see it in our code editor.\n\n__webpack.config.js__\n```js\nmodule.exports = {\n entry: './index.ts',\n output: {\n   filename: '/bundle.js',\n   path: '/'\n },\n module: {\n   rules: [\n     {\n       enforce: 'pre',\n       test: /\\.js$/,\n       loader: \"source-map-loader\"\n     },\n     {\n       enforce: 'pre',\n       test: /\\.tsx?$/,\n       use: \"source-map-loader\"\n     }\n   ]\n },\n resolve: {\n   extensions: [\".tsx\", \".ts\", \".js\"]\n },\n devtool: 'inline-source-map',\n};\n```\n \nFirst we add a new loader called source-map-loader. \n\nTo install it run: \n\n`npm install --save-dev source-map-loader`.\n\nOnce the loader is installed we need to tell webpack we want to run this loader before any other loaders by using the `enforce: 'pre'` configuration flag.\nFinally we need to enable source maps in webpack by specifying the `devtool` property.\nCurrently we use the 'inline-source-map' setting, to read more about this setting and see other options check out the [devtool documentation](https://webpack.js.org/configuration/devtool/).\n\n \n \n \n\n## Using 3rd Party Libraries\n\nWhen installing 3rd party libraries from npm, it is important to remember\nto install the typing definition for that library.\n\nYou can install 3rd party library definitions from the @types repository.\n\nFor example if we want to install lodash we can run the following command to get the typings for it:\n`npm install --save-dev @types/lodash`\n\nFor more information see [this blog post](https://blogs.msdn.microsoft.com/typescript/2016/06/15/the-future-of-declaration-files/)\n\n## Importing non code assets\n\nTo use non code assets with TypeScript, we need to tell TypeScript how to defer the type for these imports.\n\nTo do this we need to create a __custom.d.ts__ file.\nThis file signifies custom definitions for TypeScript in our project.\n\nIn our __custom.d.ts__ file we need to provide a definition for svg imports, to do this we need to put the following content in this file:\n\n```typescript\ndeclare module \"*.svg\" {\n  const content: any;\n  export default content;\n}\n```\n\nHere we declare a new module for svg by specifying any import that ends in __.svg__ and define the type for this module as any.\nIf we wanted to be more explicit about this being a url we could define the type as string.\n\nThis applies not only to svg but any custom loader you may want to use which includes css, scss, json or any other file you may wish to load in your project.\n \n"
 	};
 
-/***/ },
-/* 268 */
-/***/ function(module, exports) {
+/***/ }),
+/* 272 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "webpack",
 		"__content": "\n## Write your code.\n\n<div class=\"homepage__wrap\">\n<div class=\"homepage__left\">\n\n**app.js**\n\n```js\nimport bar from './bar';\n\nbar();\n```\n\n</div><div class=\"homepage__right\">\n\n**bar.js**\n\n```js\nexport default function bar() {\n  //\n}\n```\n\n</div>\n</div>\n\n## Bundle with webpack.\n\n<div class=\"homepage__wrap\">\n<div class=\"homepage__left\">\n\n**webpack.config.js**\n\n```js\nmodule.exports = {\n  entry: './app.js',\n  output: {\n    filename: 'bundle.js'\n  }\n}\n```\n\n</div><div class=\"homepage__right\">\n\n**page.html**\n\n```html\n<html>\n  <head>\n    ...\n  </head>\n  <body>\n    ...\n    <script src=\"bundle.js\"></script>\n  </body>\n</html>\n```\n\nThen run `webpack` on the command-line to create `bundle.js`.\n\n</div>\n</div>\n\n## It's that simple.\n## [Get Started](/get-started)\n"
 	};
 
-/***/ },
-/* 269 */
-/***/ function(module, exports) {
+/***/ }),
+/* 273 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "License",
 		"__content": "\n\n(The MIT License)\n\nCopyright © 2012-2016 Tobias Koppers and other contributors\n\nThe webpack logo and icon are under a different license which can be\nfound [here](https://github.com/webpack/media).\n\nExcept where otherwise stated:\n\nPermission is hereby granted, free of charge, to any person obtaining\na copy of this software and associated documentation files (the\n'Software'), to deal in the Software without restriction, including\nwithout limitation the rights to use, copy, modify, merge, publish,\ndistribute, sublicense, and/or sell copies of the Software, and to\npermit persons to whom the Software is furnished to do so, subject to\nthe following conditions:\n\nThe above copyright notice and this permission notice shall be\nincluded in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,\nEXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\nMERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\nIN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\nTORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\nSOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n----\n\nThe content is available under [Creative Commons BY 4.0](https://creativecommons.org/licenses/by/4.0/) license meaning attribution is required should you use the content elsewhere. The code samples use [CC0 1.0 Universal (CC0 1.0) (Public Domain)](https://creativecommons.org/publicdomain/zero/1.0/) and you are free to use them as you like.\n"
 	};
 
-/***/ },
-/* 270 */
-/***/ function(module, exports) {
+/***/ }),
+/* 274 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Loaders",
@@ -42631,9 +43371,9 @@ module.exports =
 		"__content": "\n\nAs explained in detail on the [concepts page](/concepts/loaders), loaders are transformations that are applied on a resource file of your application. Loaders allow you to, for example, configure how webpack should handle a CSS file.\n\n?> Move the general usage documentation to the [concepts page](/concepts/loaders) and focus here on describing the available loaders (similar to [plugins](/plugins)).\n\nA loader is typically a npm package, which you can install as a development dependency:\n\n```sh\nnpm install css-loader --save-dev\n```\n\nThere are three ways to use loaders in your application:\n\n* via configuration\n* explicit in the `require` statement\n* via CLI\n\n## Via Configuration\n\n[`module.rules`](https://webpack.js.org/configuration/module/#module-rules) allows you to specify several loaders within your webpack configuration.\nThis is a concise way to display loaders, and helps to have clean code as \nwell as you have a full overview of each respective loader.\n\n```js\n  module: {\n    rules: [\n      {\n        test: /\\.css$/,\n        use: [\n          { loader: 'style-loader'},\n          {\n            loader: 'css-loader',\n            options: {\n              modules: true\n            }\n          }\n        ]\n      }\n    ]\n  }\n```\n\n## Via `require`\n\nIt's possible to specify the loaders in the `require` statement (or `define`, `require.ensure`, etc.). Separate loaders from the resource with `!`. Each part is resolved relative to the current directory.\n\n```js\nrequire('style-loader!css-loader?modules!./styles.css');\n```\n\nIt's possible to overwrite any loaders in the configuration by prefixing the entire rule with `!`.\n\nOptions can be passed with a query parameter, just like on the web (`?key=value&foo=bar`). It's also possible to use a JSON object (`?{\"key\":\"value\",\"foo\":\"bar\"}`).\n\nT> Use `module.rules` whenever possible, as this will reduce boilerplate in your source code and allows you to debug or locate a loader faster if something goes south.\n\n## Via CLI\n\nOptionally, you could also use loaders through the CLI:\n\n```sh\nwebpack --module-bind jade --module-bind 'css=style!css'\n```\n\nThis uses the loader “jade” for “.jade” files and the loaders “style” and “css” for “.css” files.\n"
 	};
 
-/***/ },
-/* 271 */
-/***/ function(module, exports) {
+/***/ }),
+/* 275 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "commons-chunk-plugin",
@@ -42645,18 +43385,18 @@ module.exports =
 		"__content": "\n\n```javascript\nnew webpack.optimize.CommonsChunkPlugin(options)\n```\nThe `CommonsChunkPlugin` is an opt-in feature that creates a separate file (known as a chunk), consisting of common modules shared between multiple entry points. By separating common modules from bundles, the resulting chunked file can be loaded once initially, and stored in cache for later use. This results in pagespeed optimizations as the browser can quickly serve the shared code from cache, rather than being forced to load a larger bundle whenever a new page is visited.\n\n## Options\n\n```javascript\n{\n  name: string, // or\n  names: string[],\n  // The chunk name of the commons chunk. An existing chunk can be selected by passing a name of an existing chunk.\n  // If an array of strings is passed this is equal to invoking the plugin multiple times for each chunk name.\n  // If omitted and `options.async` or `options.children` is set all chunks are used,\n  // otherwise `options.filename` is used as chunk name.\n\n  filename: string,\n  // The filename template for the commons chunk. Can contain the same placeholder as `output.filename`.\n  // If omitted the original filename is not modified (usually `output.filename` or `output.chunkFilename`).\n\n  minChunks: number|Infinity|function(module, count) -> boolean,\n  // The minimum number of chunks which need to contain a module before it's moved into the commons chunk.\n  // The number must be greater than or equal 2 and lower than or equal to the number of chunks.\n  // Passing `Infinity` just creates the commons chunk, but moves no modules into it.\n  // By providing a `function` you can add custom logic. (Defaults to the number of chunks)\n\n  chunks: string[],\n  // Select the source chunks by chunk names. The chunk must be a child of the commons chunk.\n  // If omitted all entry chunks are selected.\n\n  children: boolean,\n  // If `true` all children of the commons chunk are selected\n\n  async: boolean|string,\n  // If `true` a new async commons chunk is created as child of `options.name` and sibling of `options.chunks`.\n  // It is loaded in parallel with `options.chunks`. It is possible to change the name of the output file\n  // by providing the desired string instead of `true`.\n\n  minSize: number,\n  // Minimum size of all common module before a commons chunk is created.\n}\n```\n\nT> The deprecated webpack 1 constructor `new webpack.optimize.CommonsChunkPlugin(options, filenameTemplate, selectedChunks, minChunks)` is no longer supported. Use a corresponding options object instead.\n\n## Examples\n\n### Commons chunk for entries\n\nGenerate an extra chunk, which contains common modules shared between entry points.\n\n```javascript\nnew CommonsChunkPlugin({\n  name: \"commons\",\n  // (the commons chunk name)\n\n  filename: \"commons.js\",\n  // (the filename of the commons chunk)\n\n  // minChunks: 3,\n  // (Modules must be shared between 3 entries)\n\n  // chunks: [\"pageA\", \"pageB\"],\n  // (Only use these entries)\n})\n```\n\nYou must load the generated chunk before the entry point:\n\n```html\n<script src=\"commons.js\" charset=\"utf-8\"></script>\n<script src=\"entry.bundle.js\" charset=\"utf-8\"></script>\n```\n\n### Explicit vendor chunk\n\nSplit your code into vendor and application.\n\n```javascript\nentry: {\n  vendor: [\"jquery\", \"other-lib\"],\n  app: \"./entry\"\n}\nnew CommonsChunkPlugin({\n  name: \"vendor\",\n\n  // filename: \"vendor.js\"\n  // (Give the chunk a different name)\n\n  minChunks: Infinity,\n  // (with more entries, this ensures that no other module\n  //  goes into the vendor chunk)\n})\n```\n\n```html\n<script src=\"vendor.js\" charset=\"utf-8\"></script>\n<script src=\"app.js\" charset=\"utf-8\"></script>\n```\n\nHint: In combination with long term caching you may need to use [this plugin](https://github.com/diurnalist/chunk-manifest-webpack-plugin) to avoid that the vendor chunk changes. You should also use records to ensure stable module ids.\n\n###  Move common modules into the parent chunk\n\nWith Code Splitting multiple child chunks of a chunk can have common modules. You can move these common modules into the parent (This reduces overall size, but has a negative effect on the initial load time. It can be useful if it is expected that a user need to download many sibling chunks).\n\n```javascript\nnew CommonsChunkPlugin({\n  // names: [\"app\", \"subPageA\"]\n  // (choose the chunks, or omit for all chunks)\n\n  children: true,\n  // (select all children of chosen chunks)\n\n  // minChunks: 3,\n  // (3 children must share the module before it's moved)\n})\n```\n\n### Extra async commons chunk\n\nSimilar to the above one, but instead of moving common modules into the parent (which increases initial load time) a new async-loaded additional commons chunk is used. This is automatically downloaded in parallel when the additional chunk is downloaded.\n\n```javascript\nnew CommonsChunkPlugin({\n  // names: [\"app\", \"subPageA\"]\n  // (choose the chunks, or omit for all chunks)\n\n  children: true,\n  // (use all children of the chunk)\n\n  async: true,\n  // (create an async commons chunk)\n\n  // minChunks: 3,\n  // (3 children must share the module before it's separated)\n})\n```\n\n### Passing the `minChunks` property a function\n\nYou also have the ability to pass the `minChunks` property a function. This function is called by the `CommonsChunkPlugin` and calls the function with `module` and `count` arguments. \n\nThe `module` property represents each module in the chunks you have provided via the `names` property. \n\nThe `count` property represents how many chunks the `module` is used in. \n\nThis option is useful when you want to have fine-grained control over how the CommonsChunk algorithm determins where modules should be moved to.\n\n```javascript\nnew CommonsChunkPlugin({\n  name: \"my-single-lib-chunk\",\n  filename: \"my-single-lib-chunk.js\",\n  minChunks: function(module, countOfHowManyTimesThisModuleIsUsedAcrossAllChunks) {\n    // If module has a path, and inside of the path exists the name \"somelib\", \n    // and it is used in 3 separate chunks/entries, then break it out into\n    // a separate chunk with chunk keyname \"my-single-lib-chunk\", and filename \"my-single-lib-chunk.js\"\n    return module.resource && (/somelib/).test(module.resource) && count === 3;\n  }\n});\n```\n\nAs seen above, this example allows you to move only one lib to a separate file if and only if all conditions are met inside the function. \n"
 	};
 
-/***/ },
-/* 272 */
-/***/ function(module, exports) {
+/***/ }),
+/* 276 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "define-plugin",
 		"__content": "\n\n``` javascript\nnew webpack.DefinePlugin(definitions)\n```\n\nThe `DefinePlugin` allows you to create global constants which can be configured at **compile** time. This can be useful for allowing different behaviour between development builds and release builds. For example, you might use a global constant to determine whether logging takes place; perhaps you perform logging in your development build but not in the release build. That's the sort of scenario the `DefinePlugin` facilitates.\n\n**Example:**\n\n``` javascript\nnew webpack.DefinePlugin({\n  PRODUCTION: JSON.stringify(true),\n  VERSION: JSON.stringify(\"5fa3b9\"),\n  BROWSER_SUPPORTS_HTML5: true,\n  TWO: \"1+1\",\n  \"typeof window\": JSON.stringify(\"object\")\n})\n```\n\n``` javascript\nconsole.log(\"Running App version \" + VERSION);\nif(!BROWSER_SUPPORTS_HTML5) require(\"html5shiv\");\n```\n\nT> Note that because the plugin does a direct text replacement, the value given to it must include actual quotes inside of the string itself. Typically, this is done either with alternate quotes, such as `'\"production\"'`, or by using `JSON.stringify('production')`.\n\nEach key passed into `DefinePlugin` is an identifier or multiple identifiers joined with `.`.\n\n* If the value is a string it will be used as a code fragment.\n* If the value isn't a string, it will be stringified (including functions).\n* If the value is an object all keys are defined the same way.\n* If you prefix `typeof` to the key, it's only defined for typeof calls.\n\nThe values will be inlined into the code which allows a minification pass to remove the redundant conditional.\n\n**Example:**\n\n``` javascript\nif (!PRODUCTION) {\n  console.log('Debug info')\n}\nif (PRODUCTION) {\n  console.log('Production log')\n}\n`````\nAfter passing through webpack with no minification results in:\n\n``` javascript\nif (!true) {\n  console.log('Debug info')\n}\nif (true) {\n  console.log('Production log')\n}\n```\n\nand then after a minification pass results in:\n\n``` javascript\nconsole.log('Production log')\n```\n"
 	};
 
-/***/ },
-/* 273 */
-/***/ function(module, exports) {
+/***/ }),
+/* 277 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "environment-plugin",
@@ -42666,9 +43406,9 @@ module.exports =
 		"__content": "\n\nThe environment-plugin is a shorthand for using the [define-plugin](/plugins/define-plugin)\non [`process.env`](https://nodejs.org/api/process.html#process_process_env) keys.\n\n**Example:**\n\n```javascript\nnew webpack.EnvironmentPlugin([\n  'NODE_ENV'\n])\n```\n\nThis is equivalent to the following define-plugin application:\n\n```javascript\nnew webpack.DefinePlugin({\n  'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV)\n})\n```\n"
 	};
 
-/***/ },
-/* 274 */
-/***/ function(module, exports) {
+/***/ }),
+/* 278 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "html-webpack-plugin",
@@ -42679,9 +43419,9 @@ module.exports =
 		"__content": "\n\nThe [html-webpack-plugin](https://github.com/ampedandwired/html-webpack-plugin) simplifies creation of HTML files to serve your\nwebpack bundles. This is especially useful for webpack bundles that include\na hash in the filename which changes every compilation. You can either let the plugin generate an HTML file for you, supply\nyour own template using [lodash templates](https://lodash.com/docs#template), or use your own [loader](/loaders).\n\n## Installation\n```\n$ npm install html-webpack-plugin --save-dev\n```\n\n## Basic Usage\n\nThe plugin will generate an HTML5 file for you that includes all your webpack\nbundles in the body using `script` tags. Just add the plugin to your webpack\nconfig as follows:\n\n```javascript\nvar HtmlWebpackPlugin = require('html-webpack-plugin');\nvar webpackConfig = {\n  entry: 'index.js',\n  output: {\n    path: 'dist',\n    filename: 'index_bundle.js'\n  },\n  plugins: [new HtmlWebpackPlugin()]\n};\n```\n\nThis will generate a file `dist/index.html` containing the following:\n```html\n<!DOCTYPE html>\n<html>\n  <head>\n    <meta charset=\"UTF-8\">\n    <title>webpack App</title>\n  </head>\n  <body>\n    <script src=\"index_bundle.js\"></script>\n  </body>\n</html>\n```\n\nIf you have multiple webpack entry points, they will all be included with `script`\ntags in the generated HTML.\n\nIf you have any CSS assets in webpack's output (for example, CSS extracted\nwith the [ExtractTextPlugin](/plugins/extract-text-webpack-plugin))\nthen these will be included with `<link>` tags in the HTML head.\n\n## Configuration\n\nFor all configuration options, please see the\n[plugin documentation](https://github.com/ampedandwired/html-webpack-plugin#configuration).\n\n\n## Third party addons\n\nThe plugin supports addons. For a list see the\n[documentation](https://github.com/ampedandwired/html-webpack-plugin#third-party-addons).\n"
 	};
 
-/***/ },
-/* 275 */
-/***/ function(module, exports) {
+/***/ }),
+/* 279 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Plugins",
@@ -42691,9 +43431,9 @@ module.exports =
 		"__content": "\n\nwebpack has a rich plugin interface. Most of the features within webpack itself use this plugin interface. This makes webpack **flexible**.\n\n|Name|Description|\n|:--:|:----------|\n|[commons-chunk-plugin](/plugins/commons-chunk-plugin)|Generates chunks of common modules shared between entry points and splits them into separate  bundles, e.g., `1vendor.bundle.js` && `app.bundle.js`|\n|[extract-text-webpack-plugin](/plugins/extract-text-webpack-plugin)|Extracts Text (CSS) from your bundles into a separate file (app.bundle.css)|\n|[component-webpack-plugin](/plugins/component-webpack-plugin)|Use components with webpack|\n|[compression-webpack-plugin](/plugins/compression-webpack-plugin)|Prepare compressed versions of assets to serve them with Content-Encoding|\n|[i18n-webpack-plugin](/plugins/i18n-webpack-plugin)|Adds i18n support to your bundles|\n|[html-webpack-plugin](/plugins/html-webpack-plugin)| Simplifies creation of HTML files (`index.html`) to serve your bundles|\n"
 	};
 
-/***/ },
-/* 276 */
-/***/ function(module, exports) {
+/***/ }),
+/* 280 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "loader-options-plugin",
@@ -42703,9 +43443,9 @@ module.exports =
 		"__content": "\n\n?> Review this content\n\nThe `loader-options-plugin` is unlike other plugins.  It exists to help people move from webpack 1 to webpack 2.  With webpack 2 the schema for a `webpack.config.js` became stricter; no longer open for extension by other loaders / plugins.  With webpack 2 the intention is that you pass `options` directly to loaders / plugins. i.e. options are **not** global / shared.\n\nHowever, until a loader has been updated to depend upon options being passed directly to them, the `loader-options-plugin` exists to bridge the gap.  You can configure global / shared loader options with this plugin and all loaders will receive these options.\n\nIn the future this plugin may be removed.\n\n```javascript\nnew webpack.LoaderOptionsPlugin(options)\n```\n\n* `options.debug` (`boolean`): Whether loaders should be in `debug` mode or not. `debug` will be removed as of webpack 3.\n* `options.minimize` (`boolean`): Where loaders can be switched to minimize mode.\n* `options.options` (`object`): A configuration object that can be used to configure older loaders - this will take the same schema a `webpack.config.js`\n\n* `options.options.context` (`string`): The context that can be used to configure older loaders\n* other options as in a `webpack.config.js`....\n\n## Examples\n\n```javascript\nnew webpack.LoaderOptionsPlugin({\n  minimize: true,\n  debug: false,\n  options: {\n    context: __dirname\n  }\n})\n```\n\n"
 	};
 
-/***/ },
-/* 277 */
-/***/ function(module, exports) {
+/***/ }),
+/* 281 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "provide-plugin",
@@ -42716,9 +43456,9 @@ module.exports =
 		"__content": "\n\n```javascript\nnew webpack.ProvidePlugin({identifier1: 'module1', /* ... */})\n```\n\nAutomatically loads modules. Whenever the `identifier` is encountered as free variable in a module, the `module` is loaded automatically and the `identifier` is filled with the exports of the loaded `module`.\n\n## Typical use-cases\n\n### Use jQuery\n\n```javascript\nnew webpack.ProvidePlugin({\n  $: 'jquery',\n  jQuery: 'jquery'\n})\n```\n\n```javascript\n// in a module\n$('#item'); // <= just works\njQuery('#item'); // <= just works\n// $ is automatically set to the exports of module \"jquery\"\n```\n\n### Use jQuery with Angular 1\n\nAngular looks for `window.jQuery` in order to determine whether jQuery is present, see the [source code](https://github.com/angular/angular.js/blob/v1.5.9/src/Angular.js#L1821-L1823)\n\n```javascript\nnew webpack.ProvidePlugin({\n  'window.jQuery': 'jquery'\n})\n```\n"
 	};
 
-/***/ },
-/* 278 */
-/***/ function(module, exports) {
+/***/ }),
+/* 282 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "source-map-dev-tool-plugin",
@@ -42728,9 +43468,9 @@ module.exports =
 		"__content": "\n\n?> Review this content\n\nAdds SourceMaps for assets.\n\n```javascript\nnew webpack.SourceMapDevToolPlugin(options)\n```\n\n* `options.test` / `options.include` / `options.exclude` (`string|RegExp|Array`): Used to determine which assets should be processed. Each one can be a `RegExp` (asset filename is matched), a `string` (asset filename need to start with this string) or an `Array` of those (any of them need to be matched). `test` defaults to `.js` files if omitted.\n* `options.filename` (`string`): defines the output filename of the SourceMap. If no value is provided the SourceMap is inlined.\n* `options.append` (`string`): is appended to the original asset. Usually the `#sourceMappingURL` comment. `[url]` is replaced with a URL to the SourceMap file. `false` disables the appending.\n* `options.moduleFilenameTemplate` / `options.fallbackModuleFilenameTemplate` (`string`): see `output.devtoolModuleFilenameTemplate`.\n* `options.module` (`boolean`):  (defaults to `true`) When `false` loaders do not generate SourceMaps and the transformed code is used as source instead.\n* `options.columns` (`boolean`):  (defaults to `true`) When `false` column mappings in SourceMaps are ignored and a faster SourceMap implementation is used.\n* `options.lineToLine` (`{test: string|RegExp|Array, include: string|RegExp|Array, exclude: string|RegExp|Array}` matched modules uses simple (faster) line to line source mappings.\n\n## Examples\n\n?> TODO\n\n"
 	};
 
-/***/ },
-/* 279 */
-/***/ function(module, exports) {
+/***/ }),
+/* 283 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Compilation",
@@ -42738,9 +43478,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 280 */
-/***/ function(module, exports) {
+/***/ }),
+/* 284 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Compiler",
@@ -42748,9 +43488,9 @@ module.exports =
 		"__content": "\n\nThe `Compiler` module of webpack is the main engine that creates a compilation instance with all the options passed through webpack CLI or `webpack` api or webpack configuration file.\n\nIt is exported by `webpack` api under `webpack.Compiler`.\n\nThe compiler is used by webpack by instantiating it and then calling the `run` method. Below is a trivial example of how one might use the `Compiler`. In fact, this is really close to how webpack itself uses it.\n\n[__compiler-example__](https://github.com/pksjce/webpack-internal-examples/blob/master/compiler-example.js)\n\n```javascript\n// Can be imported from webpack package\nimport {Compiler} from 'webpack';\n\n// Create a new compiler instance\nconst compiler = new Compiler();\n\n// Populate all required options\ncompiler.options = {...};\n\n// Creating a plugin.\nclass LogPlugin {\n    apply (compiler) {\n        compiler.plugin('should-emit', compilation => {\n            console.log('should i emit?');\n            return true;\n        })\n    }\n}\n\n// Apply the compiler to the plugin\nnew LogPlugin().apply(compiler);\n\n/* Add other supporting plugins */\n\n// Callback to be executed after run is complete\nconst callback = (err, stats) => {\n    console.log('Compiler has finished execution.');\n    /* Do something to show the stats */\n};\n\n// call run on the compiler along with the callback\ncompiler.run(callback);\n```\n\nThe `Compiler` is what we call a `Tapable` instance. By this, we mean that it mixes in `Tapable` class to imbibe functionality to register and call plugins on itself.\nMost user facing plugins are first registered on the `Compiler`.\nThe working of a Compiler can be condensed into the following highlights\n - Usually there is one master instance of Compiler. Child compilers can be created for delegating specific tasks.\n - A lot of the complexity in creating a compiler goes into populating all the relevant options for it.\n - `webpack` has [`WebpackOptionsDefaulter`](https://github.com/webpack/webpack/blob/master/lib/WebpackOptionsDefaulter.js) and [`WebpackOptionsApply`](https://github.com/webpack/webpack/blob/master/lib/WebpackOptionsApply.js) specifically designed to provide the `Compiler` with all the intial data it requires.\n - The `Compiler` is just ultimately just a function which performs bare minimum functionality to keep a lifecycle running. It delegates all the loading/bundling/writing work to various plugins.\n - `new LogPlugin(args).apply(compiler)` registers the plugin to any particular hook event in the `Compiler`'s lifecycle.\n - The `Compiler` exposes a `run` method which kickstarts all compilation work for `webpack`. When that is done, it should call the passed in `callback` function. All the tail end work of logging stats and errors are done in this callback function.\n\n## Watching\n\nHowever, the `Compiler` supports two flavors of execution. One on watch mode and one on a normal single run.\nWhile it essentially performs the same functionality while watching, there are some additions to the lifecycle events. This allows `webpack` to have Watch specific plugins.\n\n## MultiCompiler\n\nThis module, MultiCompiler, allows webpack to run multiple configurations in separate compiler.\nIf the `options` parameter in the webpack's NodeJS api is an array of options, webpack applies separate compilers and calls the `callback` method at the end of each compiler execution.\n\n```javascript\nvar webpack = require('webpack');\n\nvar config1 = {\n  entry: './index1.js',\n  output: {filename: 'bundle1.js'}\n}\nvar config2 = {\n  entry: './index2.js',\n  output: {filename:'bundle2.js'}\n}\n\nwebpack([config1, config2], (err, stats) => {\n  process.stdout.write(stats.toString() + \"\\n\");\n})\n```\n\n## Event Hooks\n\nThis a reference guide to all the event hooks exposed by the `Compiler`.\n\n| Event name                 | Reason                              | Params               | Type       |\n|----------------------------|-------------------------------------|----------------------|------------|\n| __`entry-option`__         |                  -                  |           -          | bailResult |\n| __`after-plugins`__        | After setting up initial set of plugins | `compiler`       | sync       |\n| __`after-resolvers`__      | After setting up the resolvers      | `compiler`           | sync       |\n| __`environment`__          |                  -                  |           -          | sync       |\n| __`after-environment`__    | Environment setup complete          |           -          | sync       |\n| __`before-run`__           | `compiler.run()` starts             | `compiler`           | async      |\n| __`run`__                  | Before reading records              | `compiler`           | async      |\n| __`watch-run`__            | Before starting compilation after watch | `compiler`           | async      |\n| __`normal-module-factory`__ | After creating a `NormalModuleFactory` | `normalModuleFactory`| sync      |\n| __`context-module-factory`__ | After creating a `ContextModuleFactory` | `contextModuleFactory`| sync      |\n| __`before-compile`__       | Compilation parameters created      | `compilationParams`` | sync       |\n| __`compile`__              | Before creating new compilation     | `compilationParams`  | sync       |\n| __`this-compilation`__     | Before emitting `compilation` event | `compilation`        | sync       |\n| __`compilation`__          | Compilation creation completed      | `compilation`        | sync       |\n| __`make`__                 |                                     | `compilation`        | parallel   |\n| __`after-compile`__        |                                     | `compilation`        | async      |\n| __`should-emit`__          | Can return true/false at this point | `compilation`        | bailResult |\n| __`need-additional-pass`__ |                                     |           -          | bailResult |\n| __`emit`__                 | Before writing emitted assets to output dir | `compilation` | async      |\n| __`after-emit`__           | After writing emitted assets to output dir | `compilation` | async      |\n| __`done`__                 | Completion of compile               | `stats`              | sync       |\n| __`fail`__                 | Failure of compile                  | `error`              | sync       |\n| __`invalid`__              | After invalidating a watch compile  | `fileName`, `changeTime` | sync       |\n\n## Examples\n\n?> TODO: Adds examples of usage for some of the above events\n"
 	};
 
-/***/ },
-/* 281 */
-/***/ function(module, exports) {
+/***/ }),
+/* 285 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Dependency",
@@ -42758,9 +43498,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 282 */
-/***/ function(module, exports) {
+/***/ }),
+/* 286 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Examples",
@@ -42768,9 +43508,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 283 */
-/***/ function(module, exports) {
+/***/ }),
+/* 287 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Plugins API",
@@ -42778,9 +43518,9 @@ module.exports =
 		"__content": "\n\nwebpack provides flexible and powerful customization api in the form of plugins. Using plugins, we can plug functionality into webpack. Additionally, webpack provides lifecycle hooks into which plugins can be registered. At each of these lifecycle points, webpack will run all of the registered plugins and provide them with the current state of the webpack compilation.\n\n## Tapable & Tapable instances\n\nThe plugin architecture is mainly possible for webpack due to an internal library named `Tapable`.\n**Tapable Instances** are classes in the webpack source code which have been extended or mixed in from class `Tapable`.\n\nFor plugin authors, it is important to know which are the `Tapable` instances in the webpack source code. These instances provide a variety of event hooks into which custom plugins can be attached.\nHence, throughout this section are a list of all of the webpack `Tapable` instances (and their event hooks), which plugin authors can utilize.\n\nFor more information on `Tapable` visit the [tapable repository](https://github.com/webpack/tapable) or visit the [complete overview](./tapable)\n\n## Creating a Plugin\n\nA plugin for `webpack` consists of\n\n  - A named JavaScript function.\n  - Defines `apply` method in it's prototype.\n  - Specifies webpack's event hook to attach itself.\n  - Manipulates webpack internal instance specific data.\n  - Invokes webpack provided callback after functionality is complete.\n\n```javascript\n// A named JavaScript function.\nfunction MyExampleWebpackPlugin() {\n\n};\n\n// Defines `apply` method in it's prototype.\nMyExampleWebpackPlugin.prototype.apply = function(compiler) {\n  // Specifies webpack's event hook to attach itself.\n  compiler.plugin('webpacksEventHook', function(compilation /* Manipulates webpack internal instance specific data. */, callback) {\n    console.log(\"This is an example plugin!!!\");\n\n    // Invokes webpack provided callback after functionality is complete.\n    callback();\n  });\n};\n```\n\n### Different Plugin Shapes\n\nA plugin can be classified into types based on the event it is registered to. Every event hook decides how it is going to apply the plugins in its registry.\n\n- __synchronous__ The Tapable instance applies plugins using\n\n`applyPlugins(name: string, args: any...)`\n\n`applyPluginsBailResult(name: string, args: any...)`\n\nThis means that each of the plugin callbacks will be invoked one after the other with the specific `args`.\nThis is the simplest format for a plugin. Many useful events like `\"compile\"`, `\"this-compilation\"` expect plugins to have synchronous execution.\n\n- __waterfall__ Plugins applied using\n\n`applyPluginsWaterfall(name: string, init: any, args: any...)`\n\nHere each of the plugins are called one after the other with the args from the return value of the previous plugin. The plugin must take into consider the order of its execution.\nIt must accept arguments from the previous plugin that was executed. The value for the first plugin is `init`. This pattern is used in the Tapable instances which are related to the `webpack` templates like `ModuleTemplate`, `ChunkTemplate` etc.\n\n- __asynchronous__ When all the plugins are applied asynchronously using\n\n`applyPluginsAsync(name: string, args: any..., callback: (err?: Error) -> void)`\n\nThe plugin handler functions are called with all args and a callback function with the signature `(err?: Error) -> void`. The hander functions are called in order of registration.`callback` is called after all the handlers are called.\nThis is also a commonly used pattern for events like `\"emit\"`, `\"run\"`.\n\n- __async waterfall__ The plugins will be applied asynchronously in the waterfall manner.\n\n`applyPluginsAsyncWaterfall(name: string, init: any, callback: (err: Error, result: any) -> void)`\n\nThe plugin handler functions are called with the current value and a callback function with the signature `(err: Error, nextValue: any) -> void.` When called `nextValue` is the current value for the next handler. The current value for the first handler is `init`. After all handlers are applied, callback is called with the last value. If any handler passes a value for `err`, the callback is called with this error and no more handlers are called.\nThis plugin pattern is expected for events like `\"before-resolve\"` and `\"after-resolve\"`.\n\n- __async series__ It is the same as asynchronous but if any of the plugins registered fails, then no more plugins are called.\n\n`applyPluginsAsyncSeries(name: string, args: any..., callback: (err: Error, result: any) -> void)`\n\n-__parallel__ -\n\n`applyPluginsParallel(name: string, args: any..., callback: (err?: Error) -> void)`\n\n`applyPluginsParallelBailResult(name: string, args: any..., callback: (err: Error, result: any) -> void)`\n\n\n\n"
 	};
 
-/***/ },
-/* 284 */
-/***/ function(module, exports) {
+/***/ }),
+/* 288 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Context/Normal Module Factories",
@@ -42788,9 +43528,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 285 */
-/***/ function(module, exports) {
+/***/ }),
+/* 289 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Parser",
@@ -42798,9 +43538,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 286 */
-/***/ function(module, exports) {
+/***/ }),
+/* 290 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Resolver",
@@ -42808,9 +43548,9 @@ module.exports =
 		"__content": "\n\n> TODO\n"
 	};
 
-/***/ },
-/* 287 */
-/***/ function(module, exports) {
+/***/ }),
+/* 291 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Tapable",
@@ -42823,9 +43563,9 @@ module.exports =
 		"__content": "\n\n[Tapable](https://github.com/webpack/tapable) is small library that allows you to add and apply plugins to a javascript module. \nIt can be inherited or mixed in to other modules. It is similar to NodeJS's `EventEmitter` class, focusing on custom event emission and manipulation. \nHowever, in addition to this, `Tapable` allows you to have access to the \"emittee\" or \"producer\" of the event through callbacks arguments.  \n\n`Tapable` has four groups of member functions:\n\n* `plugin(name:string, handler:function)` - This allows a custom plugin to register into a **Tapable instance**'s event.\nThis acts as the same as `on()` of `EventEmitter`, for registering a handler/listener to do something when the signal/event happens.\n\n* `apply(…pluginInstances: (AnyPlugin|function)[])` - `AnyPlugin` should be subclass of [AbstractPlugin](https://github.com/webpack/webpack/blob/master/lib/AbstractPlugin.js), or a class (or object, rare case) has an `apply` method, or just a function with some registration code inside.\nThis method is just to **apply** plugins' definition, so that the real event listeners can be registered into the **Tapable instance**'s registry.\n\n* `applyPlugins*(name:string, …)` - The **Tapable instance** can apply all the plugins under a particular hash using these functions.\nThese group of method act like `emit()` of `EventEmitter`, to control the event emission meticulously with various strategy for various use cases.\n\n* `mixin(pt: Object)` - a simple method to extend `Tapable`'s prototype as a mixin rather than inheritance.\n\nThe different `applyPlugins*` methods cover the following use cases:\n\n* Plugins can run serially\n\n* Plugins can run in parallel\n\n* Plugins can run one after the other but taking input from the previous plugin (waterfall)\n\n* Plugins can run asynchronously\n\n* Quit runing plugins on bail: that is once one plugin returns non-`undefined`, jump out of the run flow and return *the return of that plugin*. This sounds like `once()` of `EventEmitter` but is totally different.\n\n## Example\nOne of webpack's **Tapable instances**, [Compiler](./compiler), is responsible for compiling the webpack configuration object and returning a [Compilation](./compilation) instance. When the Compilation instance runs, it creates the required bundles.\n\nSee below is a simplified version of how this looks using `Tapable`.\n\n**node_modules/webpack/lib/Compiler.js**\n\n```javascript\nvar Tapable = require(\"tapable\");\nfunction Compiler() {\n\tTapable.call(this);\n}\nCompiler.prototype = Object.create(Tapable.prototype);\n```\n\nNow to write a plugin on the compiler,\n\n**my-custom-plugin.js**\n\n```javascript\nfunction CustomPlugin() {}\nCustomPlugin.prototype.apply = function(compiler) {\n    compiler.plugin('emit', pluginFunction);    \n}\n```\n\nThe compiler executes the plugin at the appropriate point in its lifecycle by\n\n**node_modules/webpack/lib/Compiler.js**\n\n```javascript\nthis.apply*(\"emit\",options) // will fetch all plugins under 'emit' name and run them.\n```"
 	};
 
-/***/ },
-/* 288 */
-/***/ function(module, exports) {
+/***/ }),
+/* 292 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Template",
@@ -42833,396 +43573,22 @@ module.exports =
 		"__content": "\n\n## MainTemplate\n\n## HotUpdateChunkTemplate\n\n## ChunkTemplate\n\n## ModuleTemplate\n\n## FunctionModuleTemplate\n\n## Event Hooks\n\n## Examples"
 	};
 
-/***/ },
-/* 289 */
-/***/ function(module, exports) {
+/***/ }),
+/* 293 */
+/***/ (function(module, exports) {
 
 	module.exports = {
 		"title": "Writer's Guide",
 		"__content": "\n\n## Process\n\n1. Check related issue if an article links to one.\n2. Hit `edit` and expand on the structure.\n3. PR changes.\n\n## Article Structure\n\n1. Brief introduction - a paragraph or two so you get the basic idea. Tell what you are going to tell.\n2. Main content - tell what you promised to tell.\n3. Conclusion - tell what you told and recap the main points.\n4. References - link to related articles and external resources so people can read and learn more about the topic.\n\n## Running the Site\n\n1. `npm i`\n2. `npm start`\n3. `open http://localhost:3000`\n\nThe site will update itself as you make changes.\n\n## Formatting\n\n### Code\n\n**Syntax: \\`\\`\\`javascript … \\`\\`\\`**\n\n```javascript\nfunction foo () {\n  return 'bar';\n}\n\nfoo();\n```\n\n### Lists\n\n* Boo\n* Foo\n* Zoo\n\nLists should be ordered alphabetically.\n\n### Tables\n\n| Parameter  | Explanation                                      | Input type | Default value |\n|------------|--------------------------------------------------|------------|---------------|\n| --debug    | Switch loaders to debug mode                     | boolean    | false         |\n| --devtool  | Define source map type for the bundled resources | string     | -             |\n| --progress | Print compilation progress in percentage         | boolean    | false         |\n\nSame goes for tables.\n\n### Configuration Properties\n\nThe [configuration](/configuration) properties should be ordered alphabetically as well:\n\n* `devServer.contentBase`\n* `devServer.compress`\n* `devServer.hot`\n\n### Quotes\n\n#### Blockquote\n\n**Syntax: \\>**\n\n> This is a blockquote.\n\n#### Tip\n\n**Syntax: T\\>**\n\nT> This is a tip.\n\n**Syntax: W\\>**\n\nW> This is a warning.\n\n**Syntax: ?\\>**\n\n?> This is a todo.\n\n"
 	};
 
-/***/ },
-/* 290 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "bundle-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/bundle-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/bundle-loader/edit/master/README.md",
-		"__content": "\n# bundle loader for webpack\n\n## Usage\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\n``` javascript\n// The chunk is requested, when you require the bundle\nvar waitForChunk = require(\"bundle-loader!./file.js\");\n\n// To wait until the chunk is available (and get the exports)\n//  you need to async wait for it.\nwaitForChunk(function(file) {\n\t// use file like is was required with\n\t// var file = require(\"./file.js\");\n});\n// wraps the require in a require.ensure block\n```\n\nThe file is requested when you require the bundle loader. If you want it to request it lazy, use:\n\n``` javascript\nvar load = require(\"bundle-loader?lazy!./file.js\");\n\n// The chunk is not requested until you call the load function\nload(function(file) {\n\n});\n```\n\nYou may set name for bundle (`name` query parameter). See [documentation](https://github.com/webpack/loader-utils#interpolatename).\n\n``` javascript\nrequire(\"bundle-loader?lazy&name=my-chunk!./file.js\");\n```\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 291 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "coffee-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/coffee-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/coffee-loader/edit/master/README.md",
-		"__content": "\n# coffee-script loader for webpack\r\n\r\n## Usage\r\n\r\n``` javascript\r\nvar exportsOfFile = require(\"coffee-loader!./file.coffee\");\r\n// => return exports of executed and compiled file.coffee\r\n\r\nvar exportsOfFile2 = require(\"coffee-loader?literate!./file.litcoffee\");\r\n// can also compile literate files.\r\n```\r\n\r\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\r\n\r\n### Recommended configuration\r\n\r\n``` javascript\r\n{\r\n\tmodule: {\r\n\t\tloaders: [\r\n\t\t\t{ test: /\\.coffee$/, loader: \"coffee-loader\" },\r\n\t\t\t{ test: /\\.(coffee\\.md|litcoffee)$/, loader: \"coffee-loader?literate\" }\r\n\t\t]\r\n\t}\r\n}\r\n```\r\n\r\n## License\r\n\r\nMIT (http://www.opensource.org/licenses/mit-license.php)\r\n"
-	};
-
-/***/ },
-/* 292 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "coffee-redux-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/coffee-redux-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/coffee-redux-loader/edit/master/README.md",
-		"__content": "\n# coffee-script-redux loader for webpack\n\n## Usage\n\n``` javascript\nvar exportsOfFile = require(\"coffee-redux-loader!./file.coffee\");\n// => return exports of executed and compiled file.coffee\n```\n\nDon't forget to polyfill `require` if you want to use it in node.\nSee `webpack` documentation.\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 293 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "coverjs-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/coverjs-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/coverjs-loader/edit/master/README.md",
-		"__content": "\n# coverjs loader for webpack\n\n## Usage\n\n``` javascript\nwebpack-dev-server \"mocha!./cover-my-client-tests.js\" --options webpackOptions.js\n```\n\n``` javascript\n// webpackOptions.js\nmodule.exports = {\n\t// your webpack options\n\toutput: \"bundle.js\",\n\tpublicPrefix: \"/\",\n\tdebug: true,\n\tincludeFilenames: true,\n\twatch: true,\n\n\t// the coverjs loader binding\n\tpostLoaders: [{\n\t\ttest: \"\", // every file\n\t\texclude: [\n\t\t\t\"node_modules.chai\",\n\t\t\t\"node_modules.coverjs-loader\",\n\t\t\t\"node_modules.webpack.buildin\"\n\t\t],\n\t\tloader: \"coverjs-loader\"\n\t}]\n}\n```\n\n``` javascript\n// cover-my-client-tests.js\nrequire(\"./my-client-tests\");\n\nafter(function() {\n\trequire(\"cover-loader\").reportHtml();\n});\n```\n\nSee [the-big-test](https://github.com/webpack/the-big-test) for an example.\n\nYou don't have to combine it with the mocha loader, it's independent. So if you want to cover a normal app usage, you can do so. The `reportHtml` function just appends the output to the body.\n\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)"
-	};
-
-/***/ },
+/***/ }),
 /* 294 */
-/***/ function(module, exports) {
+/***/ (function(module, exports, __webpack_require__) {
 
-	module.exports = {
-		"title": "css-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/css-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/css-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```bash\r\nnpm install --save-dev css-loader\r\n```\r\n\r\n## Usage\r\n\r\nUse the loader either via your webpack config, CLI or inline.\r\n\r\n### Via webpack config (recommended)\r\n\r\n**webpack.config.js**\r\n```js\r\nmodule.exports = {\r\n  module: {\r\n    rules: [\r\n      {\r\n        test: /\\.css$/,\r\n        use: [ 'style-loader', 'css-loader' ]\r\n      }\r\n    ]\r\n  }\r\n}\r\n```\r\n\r\n**In your application**\r\n```js\r\nimport css from 'file.css';\r\n```\r\n\r\n### CLI\r\n\r\n```bash\r\nwebpack --module-bind 'css=style-loader!css-loader'\r\n```\r\n\r\n**In your application**\r\n```js\r\nimport css from 'file.css';\r\n```\r\n\r\n### Inline\r\n\r\n**In your application**\r\n```js\r\nimport css from 'style-loader!css-loader!./file.css';\r\n```\r\n\r\n## Options\r\n\r\n`@import` and `url()` are interpreted like `import` and will be resolved by the css-loader.\r\nGood loaders for requiring your assets are the [file-loader](https://github.com/webpack/file-loader)\r\nand the [url-loader](https://github.com/webpack/url-loader) which you should specify in your config (see below).\r\n\r\nTo be compatible with existing css files (if not in CSS Module mode):\r\n\r\n* `url(image.png)` => `require('./image.png')`\r\n* `url(~module/image.png)` => `require('module/image.png')`\r\n\r\n## Options\r\n\r\n|Name|Default|Description|\r\n|:--:|:-----:|:----------|\r\n|**`root`**|`/`|Path to resolve URLs, URLs starting with `/` will not be translated|\r\n|**`modules`**|`false`|Enable/Disable CSS Modules|\r\n|**`import`** |`true`| Enable/Disable @import handling|\r\n|**`url`**|`true`| Enable/Disable `url()` handling|\r\n|**`minimize`**|`false`|Enable/Disable minification|\r\n|**`sourceMap`**|`false`|Enable/Disable Sourcemaps|\r\n|**`camelCase`**|`false`|Export Classnames in CamelCase|\r\n|**`importLoaders`**|`0`|Number of loaders applied before CSS loader|\r\n\r\nThis webpack config can load CSS files, embed small png images as Data URLs and JPG images as files.\r\n\r\n**webpack.config.js**\r\n```js\r\nmodule.exports = {\r\n  module: {\r\n    rules: [\r\n      {\r\n        test: /\\.css$/,\r\n        use: [ 'style-loader', 'css-loader' ]\r\n      },\r\n      {\r\n        test: /\\.png$/,\r\n        use: { loader: 'url-loader', options: { limit: 100000 } },\r\n      },\r\n      {\r\n        test: /\\.jpg$/,\r\n        use: [ 'file-loader' ]\r\n      }\r\n    ]\r\n  }\r\n};\r\n```\r\n\r\n### Root\r\n\r\nFor URLs that start with a `/`, the default behavior is to not translate them:\r\n\r\n* `url(/image.png)` => `url(/image.png)`\r\n\r\nIf a `root` query parameter is set, however, it will be prepended to the URL\r\nand then translated:\r\n\r\n**webpack.config.js**\r\n```js\r\nrules: [\r\n  {\r\n    test: /\\.css$/,\r\n    use: [\r\n      'style-loader',\r\n      {\r\n        loader: 'css-loader',\r\n        options: { root: '.' }\r\n      }\r\n    ]\r\n  }\r\n]\r\n```\r\n\r\n* `url(/image.png)` => `require('./image.png')`\r\n\r\nUsing 'Root-relative' urls is not recommended. You should only use it for legacy CSS files.\r\n\r\n### CSS Scope\r\n\r\nBy default CSS exports all class names into a global selector scope. Styles can be locally scoped to avoid globally scoping styles.\r\n\r\nThe syntax `:local(.className)` can be used to declare `className` in the local scope. The local identifiers are exported by the module.\r\n\r\nWith `:local` (without brackets) local mode can be switched on for this selector. `:global(.className)` can be used to declare an explicit global selector. With `:global` (without brackets) global mode can be switched on for this selector.\r\n\r\nThe loader replaces local selectors with unique identifiers. The choosen unique identifiers are exported by the module.\r\n\r\n**app.css**\r\n```css\r\n:local(.className) { background: red; }\r\n:local .className { color: green; }\r\n:local(.className .subClass) { color: green; }\r\n:local .className .subClass :global(.global-class-name) { color: blue; }\r\n```\r\n\r\n**app.bundle.css**\r\n``` css\r\n._23_aKvs-b8bW2Vg3fwHozO { background: red; }\r\n._23_aKvs-b8bW2Vg3fwHozO { color: green; }\r\n._23_aKvs-b8bW2Vg3fwHozO ._13LGdX8RMStbBE9w-t0gZ1 { color: green; }\r\n._23_aKvs-b8bW2Vg3fwHozO ._13LGdX8RMStbBE9w-t0gZ1 .global-class-name { color: blue; }\r\n```\r\n\r\n> Note: Identifiers are exported\r\n\r\n``` js\r\nexports.locals = {\r\n  className: '_23_aKvs-b8bW2Vg3fwHozO',\r\n  subClass: '_13LGdX8RMStbBE9w-t0gZ1'\r\n}\r\n```\r\n\r\nCamelCase is recommended for local selectors. They are easier to use in the within the imported JS module.\r\n\r\n`url()` URLs in block scoped (`:local .abc`) rules behave like requests in modules:\r\n\r\n* `./file.png` instead of `file.png`\r\n* `module/file.png` instead of `~module/file.png`\r\n\r\nYou can use `:local(#someId)`, but this is not recommended. Use classes instead of ids.\r\n\r\nYou can configure the generated ident with the `localIdentName` query parameter (default `[hash:base64]`).\r\n\r\n **webpack.config.js**\r\n ```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        modules: true,\r\n        localIdentName: '[path][name]__[local]--[hash:base64:5]'\r\n      }\r\n    }\r\n  ]\r\n}\r\n```\r\n\r\nYou can also specify the absolute path to your custom `getLocalIdent` function to generate classname based on a different schema. Note that this requires `webpack >= v2.x.` since to be able to pass function in. For example:\r\n\r\n```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        modules: true,\r\n        localIdentName: '[path][name]__[local]--[hash:base64:5]',\r\n        getLocalIdent: (context, localIdentName, localName, options) => {\r\n          return 'whatever_random_class_name'\r\n        }\r\n      }\r\n    }\r\n  ]\r\n}\r\n```\r\n\r\nNote: For prerendering with extract-text-webpack-plugin you should use `css-loader/locals` instead of `style-loader!css-loader` **in the prerendering bundle**. It doesn't embed CSS but only exports the identifier mappings.\r\n\r\n### [CSS Modules](https://github.com/css-modules/css-modules)\r\n\r\nThe query parameter `modules` enables the **CSS Modules** spec.\r\n\r\nThis enables local scoped CSS by default. (You can switch it off with `:global(...)` or `:global` for selectors and/or rules.)\r\n\r\n### CSS Composing\r\n\r\nWhen declaring a local class name you can compose a local class from another local class name.\r\n\r\n``` css\r\n:local(.className) {\r\n  background: red;\r\n  color: yellow;\r\n}\r\n\r\n:local(.subClass) {\r\n  composes: className;\r\n  background: blue;\r\n}\r\n```\r\n\r\nThis doesn't result in any change to the CSS itself but exports multiple class names:\r\n\r\n```js\r\nexports.locals = {\r\n  className: '_23_aKvs-b8bW2Vg3fwHozO',\r\n  subClass: '_13LGdX8RMStbBE9w-t0gZ1 _23_aKvs-b8bW2Vg3fwHozO'\r\n}\r\n```\r\n\r\n``` css\r\n._23_aKvs-b8bW2Vg3fwHozO {\r\n  background: red;\r\n  color: yellow;\r\n}\r\n\r\n._13LGdX8RMStbBE9w-t0gZ1 {\r\n  background: blue;\r\n}\r\n```\r\n\r\n### Importing CSS Locals\r\n\r\nTo import a local class name from another module:\r\n\r\n``` css\r\n:local(.continueButton) {\r\n  composes: button from 'library/button.css';\r\n  background: red;\r\n}\r\n```\r\n\r\n``` css\r\n:local(.nameEdit) {\r\n  composes: edit highlight from './edit.css';\r\n  background: red;\r\n}\r\n```\r\n\r\nTo import from multiple modules use multiple `composes:` rules.\r\n\r\n``` css\r\n:local(.className) {\r\n  composes: edit hightlight from './edit.css';\r\n  composes: button from 'module/button.css';\r\n  composes: classFromThisModule;\r\n  background: red;\r\n}\r\n```\r\n\r\n### SourceMaps\r\n\r\nTo include Sourcemaps set the `sourceMap` query param.\r\n\r\nI. e. the extract-text-webpack-plugin can handle them.\r\n\r\nThey are not enabled by default because they expose a runtime overhead and increase in bundle size (JS SourceMap do not). In addition to that relative paths are buggy and you need to use an absolute public path which include the server URL.\r\n\r\n**webpack.config.js**\r\n```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        sourceMap: true\r\n      }\r\n    }\r\n  ]\r\n}\r\n```\r\n\r\n### ImportLoaders\r\n\r\nThe query parameter `importLoaders` allow to configure which loaders should be applied to `@import`ed resources.\r\n\r\n`importLoaders`: That many loaders after the css-loader are used to import resources.\r\n\r\n**webpack.config.js**\r\n```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        importLoaders: 1\r\n      }\r\n    },\r\n    'postcss-loader'\r\n  ]\r\n}\r\n```\r\n\r\nThis may change in the future, when the module system (i. e. webpack) supports loader matching by origin.\r\n\r\n### Minification\r\n\r\nBy default the css-loader minimizes the css if specified by the module system.\r\n\r\nIn some cases the minification is destructive to the css, so you can provide some options to it. cssnano is used for minification and you find a [list of options here](http://cssnano.co/options/).\r\n\r\nYou can also disable or enforce minification with the `minimize` query parameter.\r\n\r\n**webpack.config.js**\r\n```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        minimize: true || {/* CSSNano Options */}\r\n      }\r\n    }\r\n  ]\r\n}\r\n```\r\n\r\n### CamelCase\r\n\r\nBy default, the exported JSON keys mirror the class names. If you want to camelize class names (useful in JS), pass the query parameter `camelCase` to css-loader.\r\n\r\n**webpack.config.js**\r\n```js\r\n{\r\n  test: /\\.css$/,\r\n  use: [\r\n    {\r\n      loader: 'css-loader',\r\n      options: {\r\n        camelCase: true\r\n      }\r\n    }\r\n  ]\r\n}\r\n```\r\n\r\n```css\r\n.class-name {}\r\n```\r\n\r\n```js\r\nimport { className } from 'file.css';\r\n```\r\n\r\n## Maintainer\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\" src=\"https://github.com/sokra.png?s=150\">\r\n        <br>\r\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\r\n      </td>\r\n    <tr>\r\n  <tbody>\r\n</table>\r\n\r\n\r\n[npm]: https://img.shields.io/npm/v/css-loader.svg\r\n[npm-url]: https://npmjs.com/package/css-loader\r\n\r\n[node]: https://img.shields.io/node/v/css-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack/css-loader.svg\r\n[deps-url]: https://david-dm.org/webpack/css-loader\r\n\r\n[tests]: http://img.shields.io/travis/webpack/css-loader.svg\r\n[tests-url]: https://travis-ci.org/webpack/css-loader\r\n\r\n[cover]: https://coveralls.io/repos/github/webpack/css-loader/badge.svg\r\n[cover-url]: https://coveralls.io/github/webpack/css-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 295 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "exports-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/exports-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/exports-loader/edit/master/README.md",
-		"__content": "\n# exports loader for webpack\n\nThe `exports-loader` loader exports variables from inside the file by appending `exports[...] = ...` statements.\n\n## Installation\n\n```\nnpm install exports-loader\n```\n\n## Usage\n\n``` javascript\nrequire(\"exports-loader?file,parse=helpers.parse!./file.js\");\n// adds below code the the file's source:\n//  exports[\"file\"] = file;\n//  exports[\"parse\"] = helpers.parse;\n\nrequire(\"exports-loader?file!./file.js\");\n// adds below code the the file's source:\n//  module.exports = file;\n```\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 296 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "expose-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/expose-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/expose-loader/edit/master/README.md",
-		"__content": "\n# expose loader for webpack\n\nThe expose loader adds modules to the global object. This is useful\nfor debugging, or supporting libraries that depend on libraries in\nglobals.\n\n**Note**: Modules must be `require()`'d within in your bundle, or they will not\nbe exposed.\n\n## Usage\n\n``` javascript\nrequire(\"expose-loader?libraryName!./file.js\");\n// Exposes the exports for file.js to the global context on property \"libraryName\".\n// In web browsers, window.libraryName is then available.\n```\n\nThis line works to expose React to the web browser to enable the Chrome React devtools:\n\n```\nrequire(\"expose-loader?React!react\");\n```\n\nThus, `window.React` is then available to the Chrome React devtools extension.\n\nAlternately, you can set this in your config file:\n\n```\nmodule: {\n  loaders: [\n    { test: require.resolve(\"react\"), loader: \"expose-loader?React\" }\n  ]\n}\n```\nAlso for multiple expose you can use `!` in loader string:\n```\nmodule: {\n  loaders: [\n    { test: require.resolve(\"jquery\"), loader: \"expose-loader?$!expose-loader?jQuery\" },\n  ]\n}\n```\n\nThe `require.resolve` is a node.js call (unrelated to `require.resolve` in webpack\nprocessing -- check the node.js docs instead). `require.resolve` gives you the\nabsolute path to the module (\"/.../app/node_modules/react/react.js\"). So the\nexpose only applies to the react module. And it's only exposed when used in the\nbundle.\n\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 297 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "file-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/file-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/file-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```bash\r\nnpm install --save-dev file-loader\r\n```\r\n\r\n## Usage\r\n\r\nBy default the filename of the resulting file is the MD5 hash of the file's contents\r\nwith the original extension of the required resource.\r\n\r\n``` javascript\r\nvar url = require(\"file-loader!./file.png\");\r\n// => emits file.png as file in the output directory and returns the public url\r\n// => returns i. e. \"/public-path/0dcbbaa701328a3c262cfd45869e351f.png\"\r\n```\r\n\r\nBy default a file is emitted, however this can be disabled if required (e.g. for server\r\nside packages).\r\n\r\n``` javascript\r\nvar url = require(\"file-loader?emitFile=false!./file.png\");\r\n// => returns the public url but does NOT emit a file\r\n// => returns i. e. \"/public-path/0dcbbaa701328a3c262cfd45869e351f.png\"\r\n```\r\n\r\n#### Filename templates\r\n\r\nYou can configure a custom filename template for your file using the query parameter `name`. For instance, to copy a file from your `context` directory into the output directory retaining the full directory structure, you might use `?name=[path][name].[ext]`.\r\n\r\nBy default, the path and name you specify will output the file in that same directory and will also use that same URL path to access the file.\r\n\r\nYou can specify custom output and public paths by using the `outputPath` and `publicPath` query name parameters:\r\n\r\n```\r\nuse: \"file-loader?name=[name].[ext]&publicPath=assets/foo/&outputPath=app/images/\"\r\n```\r\n\r\n#### Filename template placeholders\r\n\r\n* `[ext]` the extension of the resource\r\n* `[name]` the basename of the resource\r\n* `[path]` the path of the resource relative to the `context` query parameter or option.\r\n* `[hash]` the hash of the content, `hex`-encoded `md5` by default\r\n* `[<hashType>:hash:<digestType>:<length>]` optionally you can configure\r\n  * other `hashType`s, i. e. `sha1`, `md5`, `sha256`, `sha512`\r\n  * other `digestType`s, i. e. `hex`, `base26`, `base32`, `base36`, `base49`, `base52`, `base58`, `base62`, `base64`\r\n  * and `length` the length in chars\r\n* `[N]` the N-th match obtained from matching the current file name against the query param `regExp`\r\n\r\n#### Examples\r\n\r\n``` javascript\r\nrequire(\"file-loader?name=js/[hash].script.[ext]!./javascript.js\");\r\n// => js/0dcbbaa701328a3c262cfd45869e351f.script.js\r\n\r\nrequire(\"file-loader?name=html-[hash:6].html!./page.html\");\r\n// => html-109fa8.html\r\n\r\nrequire(\"file-loader?name=[hash]!./flash.txt\");\r\n// => c31e9820c001c9c4a86bce33ce43b679\r\n\r\nrequire(\"file-loader?name=[sha512:hash:base64:7].[ext]!./image.png\");\r\n// => gdyb21L.png\r\n// use sha512 hash instead of md5 and with only 7 chars of base64\r\n\r\nrequire(\"file-loader?name=img-[sha512:hash:base64:7].[ext]!./image.jpg\");\r\n// => img-VqzT5ZC.jpg\r\n// use custom name, sha512 hash instead of md5 and with only 7 chars of base64\r\n\r\nrequire(\"file-loader?name=picture.png!./myself.png\");\r\n// => picture.png\r\n\r\nrequire(\"file-loader?name=[path][name].[ext]?[hash]!./dir/file.png\")\r\n// => dir/file.png?e43b20c069c4a01867c31e98cbce33c9\r\n```\r\n\r\n## Contributing\r\n\r\nDon't hesitate to create a pull request. Every contribution is appreciated. In development you can start the tests by calling `npm test`.\r\n\r\n## Maintainers\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/sokra?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Tobias Koppers</a>\r\n      </td>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/SpaceK33z?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Kees Kluskens</a>\r\n      </td>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/mobitar?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Mo Bitar</a>\r\n      </td>\r\n    </tr>\r\n  </tbody>\r\n</table>\r\n\r\n\r\n## LICENSE\r\n\r\n#### [MIT](./LICENSE)\r\n\r\n[npm]: https://img.shields.io/npm/v/file-loader.svg\r\n[npm-url]: https://npmjs.com/package/file-loader\r\n\r\n[node]: https://img.shields.io/node/v/file-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack-contrib/file-loader.svg\r\n[deps-url]: https://david-dm.org/webpack-contrib/file-loader\r\n\r\n[tests]: http://img.shields.io/travis/webpack-contrib/file-loader.svg\r\n[tests-url]: https://travis-ci.org/webpack-contrib/file-loader\r\n\r\n[cover]: https://coveralls.io/repos/github/webpack-contrib/file-loader/badge.svg\r\n[cover-url]: https://coveralls.io/github/webpack-contrib/file-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 298 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "html-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/html-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/html-loader/edit/master/README.md",
-		"__content": "\n## Install\n\n```bash\nnpm i -D html-loader\n```\n\n## Usage\n\nBy default every local `<img src=\"image.png\">` is required (`require('./image.png')`). You may need to specify loaders for images in your configuration (recommended `file-loader` or `url-loader`).\n\nYou can specify which tag-attribute combination should be processed by this loader via the query parameter `attrs`. Pass an array or a space-separated list of `<tag>:<attribute>` combinations. (Default: `attrs=img:src`)\n\nTo completely disable tag-attribute processing (for instance, if you're handling image loading on the client side) you can pass in `attrs=false`.\n\n## Examples\n\nWith this configuration:\n\n```js\n{\n  module: {\n    loaders: [\n      { test: /\\.jpg$/, loader: \"file-loader\" },\n      { test: /\\.png$/, loader: \"url-loader?mimetype=image/png\" }\n    ]\n  },\n  output: {\n    publicPath: \"http://cdn.example.com/[hash]/\"\n  }\n}\n```\n\n``` html\n<!-- file.html -->\n<img src=\"image.png\" data-src=\"image2x.png\" >\n```\n\n```js\nrequire(\"html-loader!./file.html\");\n\n// => '<img src=\"http://cdn.example.com/49eba9f/a992ca.png\"\n//         data-src=\"image2x.png\">'\n```\n\n```js\nrequire(\"html-loader?attrs=img:data-src!./file.html\");\n\n// => '<img src=\"image.png\" data-src=\"data:image/png;base64,...\" >'\n```\n\n```js\nrequire(\"html-loader?attrs=img:src img:data-src!./file.html\");\nrequire(\"html-loader?attrs[]=img:src&attrs[]=img:data-src!./file.html\");\n\n// => '<img  src=\"http://cdn.example.com/49eba9f/a992ca.png\"        \n//           data-src=\"data:image/png;base64,...\" >'\n```\n\n```js\nrequire(\"html-loader?-attrs!./file.html\");\n\n// => '<img  src=\"image.jpg\"  data-src=\"image2x.png\" >'\n```\n\nminimized by running `webpack --optimize-minimize`\n\n```html\n'<img src=http://cdn.example.com/49eba9f/a9f92ca.jpg\n      data-src=data:image/png;base64,...>'\n```\n\nor specify the `minimize` query in your `webpack.conf.js`\n\n```js\nmodule: {\n  loaders: [{\n    test: /\\.html$/,\n    loader: 'html',\n    query: {\n      minimize: true\n    }\n  }]\n}\n```\n\n### 'Root-relative' URLs\n\nFor urls that start with a `/`, the default behavior is to not translate them.\nIf a `root` query parameter is set, however, it will be prepended to the url\nand then translated.\n\nWith the same configuration as above:\n\n``` html\n<!-- file.html -->\n<img src=\"/image.jpg\">\n```\n\n```js\nrequire(\"html-loader!./file.html\");\n\n// => '<img  src=\"/image.jpg\">'\n```\n\n```js\nrequire(\"html-loader?root=.!./file.html\");\n\n// => '<img  src=\"http://cdn.example.com/49eba9f/a992ca.jpg\">'\n```\n\n### Interpolation\n\nYou can use `interpolate` flag to enable interpolation syntax for ES6 template strings, like so:\n\n```js\nrequire(\"html-loader?interpolate!./file.html\");\n```\n\n```html\n<img src=\"${require(`./images/gallery.png`)}\">\n\n<div>${require('./components/gallery.html')}</div>\n```\nAnd if you only want to use `require` in template and any other `${}` are not to be translated, you can set `interpolate` flag to `require`, like so:\n\n```js\nrequire(\"html-loader?interpolate=require!./file.ftl\");\n```\n\n```html\n\n<#list list as list>\n  <a href=\"${list.href!}\" />${list.name}</a>\n</#list>\n\n<img src=\"${require(`./images/gallery.png`)}\">\n\n<div>${require('./components/gallery.html')}</div>\n```\n\n### Export formats\n\nThere are different export formats available:\n\n+ ```module.exports``` (default, cjs format). \"Hello world\" becomes ```module.exports = \"Hello world\";```\n+ ```exports.default``` (when ```exportAsDefault``` param is set, es6to5 format). \"Hello world\" becomes ```exports.default = \"Hello world\";```\n+ ```export default``` (when ```exportAsEs6Default``` param is set, es6 format). \"Hello world\" becomes ```export default \"Hello world\";```\n\n### Advanced options\n\nIf you need to pass [more advanced options](https://github.com/webpack/html-loader/pull/46), especially those which cannot be stringified, you can also define an `htmlLoader`-property on your `webpack.config.js`:\n\n```js\nvar path = require('path')\n\nmodule.exports = {\n  ...\n  module: {\n    loaders: [\n      {\n        test: /\\.html$/,\n        loader: \"html-loader\"\n      }\n    ]\n  },\n  htmlLoader: {\n    ignoreCustomFragments: [/\\{\\{.*?}}/],\n    root: path.resolve(__dirname, 'assets'),\n    attrs: ['img:src', 'link:href']\n  }\n};\n```\n\nIf you need to define two different loader configs, you can also change the config's property name via `html-loader?config=otherHtmlLoaderConfig`:\n\n```js\nmodule.exports = {\n  ...\n  module: {\n    loaders: [\n      {\n        test: /\\.html$/,\n        loader: \"html-loader?config=otherHtmlLoaderConfig\"\n      }\n    ]\n  },\n  otherHtmlLoaderConfig: {\n    ...\n  }\n};\n```\n\n### Export into HTML files\n\nA very common scenario is exporting the HTML into their own _.html_ file, to\nserve them directly instead of injecting with javascript. This can be achieved\nwith a combination of 3 loaders:\n\n- [file-loader](https://github.com/webpack/file-loader)\n- [extract-loader](https://github.com/peerigon/extract-loader)\n- html-loader\n\nThe html-loader will parse the URLs, require the images and everything you\nexpect. The extract loader will parse the javascript back into a proper html\nfile, ensuring images are required and point to proper path, and the file loader\nwill write the _.html_ file for you. Example:\n\n```js\n{\n  test: /\\.html$/,\n  loader: 'file-loader?name=[path][name].[ext]!extract-loader!html-loader'\n}\n```\n\n## Maintainers\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/18315?v=3\">\n        </br>\n        <a href=\"https://github.com/hemanth\">Hemanth</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/8420490?v=3\">\n        </br>\n        <a href=\"https://github.com/d3viant0ne\">Joshua Wiens</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\" src=\"https://avatars.githubusercontent.com/u/5419992?v=3\">\n        </br>\n        <a href=\"https://github.com/michael-ciniawsky\">Michael Ciniawsky</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/6542274?v=3\">\n        </br>\n        <a href=\"https://github.com/imvetri\">Imvetri</a>\n      </td>\n    </tr>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/1520965?v=3\">\n        </br>\n        <a href=\"https://github.com/andreicek\">Andrei Crnković</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/3367801?v=3\">\n        </br>\n        <a href=\"https://github.com/abouthiroppy\">Yuta Hiroto</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\" src=\"https://avatars.githubusercontent.com/u/80044?v=3\">\n        </br>\n        <a href=\"https://github.com/petrunov\">Vesselin Petrunov</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/u/973543?v=3\">\n        </br>\n        <a href=\"https://github.com/gajus\">Gajus Kuizinas</a>\n      </td>\n    </tr>\n  </tbody>\n</table>\n\n## LICENSE\n\n> MIT\n\n> http://www.opensource.org/licenses/mit-license.php\n\n> Copyright (c) 2016 Tobias Koppers @sokra\n\n> Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\n> The above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\n> THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n\n[npm]: https://img.shields.io/npm/v/html-loader.svg\n[npm-url]: https://npmjs.com/package/html-loader\n\n[deps]: https://david-dm.org/webpack/html-loader.svg\n[deps-url]: https://david-dm.org/webpack/html-loader\n\n[chat]: https://img.shields.io/badge/gitter-webpack%2Fwebpack-brightgreen.svg\n[chat-url]: https://gitter.im/webpack/webpack\n\n[test]: http://img.shields.io/travis/webpack/html-loader.svg\n[test-url]: https://travis-ci.org/webpack/html-loader\n\n[cover]: https://codecov.io/gh/webpack/html-loader/branch/master/graph/badge.svg\n[cover-url]: https://codecov.io/gh/webpack/html-loader\n"
-	};
-
-/***/ },
-/* 299 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "i18n-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/i18n-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/i18n-loader/edit/master/README.md",
-		"__content": "\n# i18n loader for webpack\r\n\r\n## Usage\r\n\r\n### ./colors.json\r\n\r\n``` javascript\r\n{\r\n\t\"red\": \"red\",\r\n\t\"green\": \"green\",\r\n\t\"blue\": \"blue\"\r\n}\r\n```\r\n\r\n### ./de-de.colors.json\r\n\r\n``` javascript\r\n{\r\n\t\"red\": \"rot\",\r\n\t\"green\": \"gr�n\"\r\n}\r\n```\r\n\r\n### call it\r\n\r\n``` javascript\r\n// assuming our locale is \"de-de-berlin\"\r\nvar locale = require(\"i18n!./colors.json\");\r\n\r\n// wait for ready, this is only required once for all locales in a web app\r\n// because all locales of the same language are merged into one chuck\r\nlocale(function() {\r\n\tconsole.log(locale.red); // prints rot\r\n\tconsole.log(locale.blue); // prints blue\r\n});\r\n```\r\n\r\n### options\r\n\r\nYou should tell the loader about all your locales, if you want to load them once\r\nand than want to use them synchronous.\r\n\r\n``` javascript\r\n{\r\n\t\"i18n\": {\r\n\t\t\"locales\": [\r\n\t\t\t\"de\",\r\n\t\t\t\"de-de\",\r\n\t\t\t\"fr\"\r\n\t\t],\r\n\t\t// \"bundleTogether\": false\r\n\t\t// this can disable the bundling of locales\r\n\t}\r\n}\r\n```\r\n\r\n### alternative calls\r\n\r\n``` javascript\r\nrequire(\"i18n/choose!./file.js\"); // chooses the correct file by locale,\r\n\t\t\t\t\t// but it do not merge the objects\r\nrequire(\"i18n/concat!./file.js\"); // concatinate all fitting locales\r\nrequire(\"i18n/merge!./file.js\"); // merges the resulting objects\r\n\t\t\t\t\t// ./file.js is excuted while compiling\r\nrequire(\"i18n!./file.json\") == require(\"i18n/merge!json!./file.json\")\r\n```\r\n\r\nDon't forget to polyfill `require` if you want to use it in node.\r\nSee `webpack` documentation.\r\n\r\n## License\r\n\r\nMIT (http://www.opensource.org/licenses/mit-license.php)"
-	};
-
-/***/ },
-/* 300 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "imports-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/imports-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/imports-loader/edit/master/README.md",
-		"__content": "\n# imports loader for webpack\n\nThe imports loader allows you to use modules that depend on specific global variables.\n\nThis is useful for third-party modules that rely on global variables like `$` or `this` being the `window` object. The imports loader can add the necessary `require('whatever')` calls, so those modules work with webpack.\n\n## Installation\n\n```\nnpm install imports-loader\n```\n\n## Usage\n\nGiven you have this file `example.js`\n\n```javascript\n$(\"img\").doSomeAwesomeJqueryPluginStuff();\n```\n\nthen you can inject the `$` variable into the module by configuring the imports-loader like this:\n\n``` javascript\nrequire(\"imports-loader?$=jquery!./example.js\");\n```\n\nThis simply prepends `var $ = require(\"jquery\");` to `example.js`.\n\n### Syntax\n\nQuery value | Equals\n------------|-------\n`angular` | `var angular = require(\"angular\");`\n`$=jquery` | `var $ = require(\"jquery\");`\n`define=>false` | `var define = false;`\n`config=>{size:50}` | `var config = {size:50};`\n`this=>window` | `(function () { ... }).call(window);`\n\n### Multiple values\n\nMultiple values are separated by comma `,`:\n\n```javascript\nrequire(\"imports-loader?$=jquery,angular,config=>{size:50}!./file.js\");\n```\n\n### webpack.config.js\n\nAs always, you should rather configure this in your `webpack.config.js`:\n\n```javascript\n// ./webpack.config.js\n\nmodule.exports = {\n    ...\n    module: {\n        loaders: [\n            {\n                test: require.resolve(\"some-module\"),\n                loader: \"imports-loader?this=>window\"\n            }\n        ]\n    }\n};\n```\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\n## Typical use-cases\n\n### jQuery plugins\n\n`imports-loader?$=jquery`\n\n### Custom Angular modules\n\n`imports-loader?angular`\n\n### Disable AMD\n\nThere are many modules that check for a `define` function before using CommonJS. Since webpack is capable of both, they default to AMD in this case, which can be a problem if the implementation is quirky.\n\nThen you can easily disable the AMD path by writing\n\n```javascript\nimports-loader?define=>false\n```\n\nFor further hints on compatibility issues, check out [Shimming Modules](http://webpack.github.io/docs/shimming-modules.html) of the official docs.\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 301 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "jshint-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/jshint-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/jshint-loader/edit/master/README.md",
-		"__content": "\n# jshint loader for webpack\n\n## Usage\n\nApply the jshint loader as pre/postLoader in your webpack configuration:\n\n``` javascript\nmodule.exports = {\n\tmodule: {\n\t\tpreLoaders: [\n\t\t\t{\n\t\t\t\ttest: /\\.js$/, // include .js files\n\t\t\t\texclude: /node_modules/, // exclude any and all files in the node_modules folder\n\t\t\t\tloader: \"jshint-loader\"\n\t\t\t}\n\t\t]\n\t},\n\n\t// more options in the optional jshint object\n\tjshint: {\n\t\t// any jshint option http://www.jshint.com/docs/options/\n\t\t// i. e.\n\t\tcamelcase: true,\n\n\t\t// jshint errors are displayed by default as warnings\n\t\t// set emitErrors to true to display them as errors\n\t\temitErrors: false,\n\n\t\t// jshint to not interrupt the compilation\n\t\t// if you want any file with jshint errors to fail\n\t\t// set failOnHint to true\n\t\tfailOnHint: false,\n\n\t\t// custom reporter function\n\t\treporter: function(errors) { }\n\t}\n}\n```\n\n### Custom reporter\n\nBy default, `jshint-loader` will provide a default reporter.\n\nHowever, if you prefer a custom reporter, pass a function under the `reporter` key in `jshint` options. (see *usage* above)\n\nThe reporter function will be passed an array of errors/warnings produced by jshint\nwith the following structure:\n```js\n[\n{\n    id:        [string, usually '(error)'],\n    code:      [string, error/warning code],\n    reason:    [string, error/warning message],\n    evidence:  [string, a piece of code that generated this error]\n    line:      [number]\n    character: [number]\n    scope:     [string, message scope;\n                usually '(main)' unless the code was eval'ed]\n\n    [+ a few other legacy fields that you don't need to worry about.]\n},\n// ...\n// more errors/warnings\n]\n```\n\nThe reporter function will be excuted with the loader context as `this`. You may emit messages using `this.emitWarning(...)` or `this.emitError(...)`. See [webpack docs on loader context](http://webpack.github.io/docs/loaders.html#loader-context).\n\n**Note:** jshint reporters are **not compatible** with jshint-loader!\nThis is due to the fact that reporter input is only processed from one file; not multiple files. Error reporting in this manner differs from [tranditional reporters](http://www.jshint.com/docs/reporters/) for jshint\nsince the loader plugin (i.e. jshint-loader) is executed for each source file; and thus the reporter is executed for each file.\n\nThe output in webpack CLI will usually be:\n```js\n...\n\nWARNING in ./path/to/file.js\n<reporter output>\n\n...\n```\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 302 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "json-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/json-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/json-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```bash\r\nnpm install --save-dev json-loader\r\n```\r\n\r\n## Usage\r\n\r\n\r\n### Configuration (recommended)\r\n\r\n**webpack.config.js**\r\n```js\r\nmodule.exports = {\r\n  module: {\r\n    rules: [\r\n      {\r\n        test: /\\.json$/,\r\n        use: 'json-loader'\r\n      }\r\n    ]\r\n  }\r\n}\r\n```\r\n\r\n```js\r\nimport json from 'file.json';\r\n```\r\n\r\n### CLI\r\n\r\n```bash\r\nwebpack --module-bind 'json=json-loader'\r\n```\r\n\r\n```js\r\nimport json from 'file.json';\r\n```\r\n\r\n### Inline\r\n\r\n```js\r\nimport json from 'json-loader!file.json';\r\n```\r\n\r\n## Maintainer\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\" src=\"https://github.com/sokra.png?s=150\">\r\n        <br>\r\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\r\n      </td>\r\n    </tr>\r\n  </tbody>\r\n</table>\r\n\r\n[npm]: https://img.shields.io/npm/v/json-loader.svg\r\n[npm-url]: https://npmjs.com/package/json-loader\r\n\r\n[node]: https://img.shields.io/node/v/json-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack/json-loader.svg\r\n[deps-url]: https://david-dm.org/webpack/json-loader\r\n\r\n[tests]: http://img.shields.io/travis/webpack/json-loader.svg\r\n[tests-url]: https://travis-ci.org/webpack/json-loader\r\n\r\n[cover]: https://coveralls.io/repos/github/webpack/json-loader/badge.svg\r\n[cover-url]: https://coveralls.io/github/webpack/json-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 303 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "json5-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/json5-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/json5-loader/edit/master/README.md",
-		"__content": "\n## Install\n\n```sh\n$ npm install --save-dev json5-loader\n```\n\n## Usage\n\nYou can use the loader either\n * by configuring the `json5-loader` in the `module.loaders` object of the webpack configuration, or\n * by directly using the `json5!` prefix to the require statement.\n\nSuppose we have the following `json5` file\n```js\n// appData.json5\n{\n  env: 'production',\n  passwordStregth: 'strong'\n}\n```\n\n#### Usage with preconfigured loader\n\n```js\n// webpack.config.js\nmodule.exports = {\n  entry: './index.js',\n  output: { /* ... */ },\n  module: {\n    loaders: [\n      {\n        // make all files ending in .json5 use the `json5-loader`\n        test: /\\.json5$/,\n        loader: 'json5-loader'\n      }\n    ]\n  }\n}\n```\n\n```js\n// index.js\nvar appConfig = require('./appData.json5')\n// or, in ES6\n// import appConfig from './appData.json5'\n\nconsole.log(appConfig.env) // 'production'\n```\n#### Usage with require statement loader prefix\n```js\nvar appConfig = require(\"json5-loader!./appData.json5\")\n// returns the content as json parsed object\n\nconsole.log(appConfig.env) // 'production'\n```\n\nDon't forget to polyfill require if you want to use it in Node.js. See the webpack documentation.\n\n## Maintainers\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150 height=\"150\"\n        src=\"https://avatars.githubusercontent.com/sokra?v=3\">\n        <br />\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150 height=\"150\"\n        src=\"https://avatars.githubusercontent.com/gdi2290?v=3\">\n        <br />\n        <a href=\"https://github.com/gdi2290\">PatrickJS</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\" src=\"https://avatars.githubusercontent.com/Cellule?v=3\">\n        <br />\n        <a href=\"https://github.com/Cellule\">Michael Ferris</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/kmck?v=3\">\n        <br />\n        <a href=\"https://github.com/kmck\">Keith McKnight</a>\n      </td>\n    </tr>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/radubrehar?v=3\">\n        <br />\n        <a href=\"https://github.com/radubrehar\">Radu Brehar</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/kentcdodds?v=3\">\n        <br />\n        <a href=\"https://github.com/kentcdodds\">Kent C. Dodds</a>\n      </td>\n      <td align=\"center\">\n        <img width=\"150\" height=\"150\"\n        src=\"https://avatars.githubusercontent.com/stevelacy?v=3\">\n        <br />\n        <a href=\"https://github.com/stevelacy\">Steve Lacy</a>\n      </td>\n    <tr>\n  <tbody>\n</table>\n\n## LICENSE\n\n#### [MIT](./LICENSE)\n\n[npm]: https://img.shields.io/npm/v/json-loader.svg\n[npm-url]: https://npmjs.com/package/json-loader\n\n[deps]: https://david-dm.org/webpack/json-loader.svg\n[deps-url]: https://david-dm.org/webpack/json-loader\n\n[chat]: https://img.shields.io/badge/gitter-webpack%2Fwebpack-brightgreen.svg\n[chat-url]: https://gitter.im/webpack/webpack\n\n[test]: http://img.shields.io/travis/webpack/json-loader.svg\n[test-url]: https://travis-ci.org/webpack/json-loader\n\n[cover]: https://coveralls.io/repos/github/webpack/json-loader/badge.svg?branch=master\n[cover-url]: https://coveralls.io/github/webpack/json-loader?branch=master\n"
-	};
-
-/***/ },
-/* 304 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "less-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/less-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/less-loader/edit/master/README.md",
-		"__content": "\n## Install\n\n```bash\nnpm install --save-dev less-loader less\n```\n\n## Usage\n\nUse [`less-loader`](https://github.com/webpack/less-loader) in tandem with [css-loader](https://github.com/webpack/css-loader) & [style-loader](https://github.com/webpack/style-loader) to add LESS support for webpack.\n\nUse the loader either via your webpack config, CLI or inline.\n\n### Via webpack config (recommended)\n\n**webpack.config.js**\n```js\nmodule.exports = {\n  module: {\n    rules: [\n      {\n        test: /\\.less$/,\n        use: [\n          'style-loader',\n          { loader: 'css-loader', options: { importLoaders: 1 } },\n          'less-loader'\n        ]\n      }\n    ]\n  }\n}\n```\n\n**In your application**\n```js\nimport css from 'file.less';\n```\n\n### CLI\n\n```bash\nwebpack --module-bind 'less=style-loader!css-loader!less-loader'\n```\n\n**In your application**\n```js\nimport css from 'file.less';\n```\n\n### Inline\n\n**In your application**\n```js\nimport css from 'style-loader!css-loader!less-loader!./file.less';\n```\n\n## Options\n\nYou can pass any LESS specific options to less-loader via loader options or query parameters.\n\nSee the [LESS documentation](http://lesscss.org/usage/#command-line-usage-options) for all available options. LESS translates dash-case to camelCase. Certain options which take values (e.g. `lessc --modify-var=\"a=b\"`) are better handled with the [JSON Syntax](http://webpack.github.io/docs/using-loaders.html#query-parameters)\n\n```js\n{\n  test: /\\.less$/,\n  use: [\n    'style-loader',\n    { loader: 'css-loader', options: { importLoaders: 1 } },\n    { loader: 'less-loader', options: { strictMath: true, noIeCompat: true } }\n\t]\n}\n```\n\n### Plugins\n\nIn order to use [plugins](http://lesscss.org/usage/#plugins), simply set\nthe `options.lessPlugins`-option on your `webpack.config.js`.\n\n```js\nconst CleanCSSPlugin = require('less-plugin-clean-css');\n\n{\n  test: /\\.less$/,\n  use: [\n    'style-loader',\n    { loader: 'css-loader', options: { importLoaders: 1 } },\n    {\n      loader: 'less-loader',\n      options: { lessPlugins: [ new CleanCSSPlugin({ advanced: true }) ] }\n    }\n}\n```\n\n### Imports\n\nwebpack provides an [advanced mechanism to resolve files](https://webpack.js.org/configuration/resolve/). The less-loader stubs less' `fileLoader` and passes all queries to the webpack resolving engine. Thus you can import your less-modules from `node_modules`. Just prepend them with a `~` which tells webpack to look-up the [`modules`](https://webpack.js.org/configuration/resolve/#resolve-modules)\n\n```css\n@import \"~bootstrap/less/bootstrap\";\n```\n\nIt's important to only prepend it with `~`, because `~/` resolves to the home-directory. webpack needs to distinguish between `bootstrap` and `~bootstrap` because css- and less-files have no special syntax for importing relative files. Writing `@import \"file\"` is the same as `@import \"./file\";`\n\nAlso please note that for [CSS modules](https://github.com/css-modules/css-modules), relative file paths do not work as expected. Please see [this issue for the explanation](https://github.com/webpack/less-loader/issues/109#issuecomment-253797335).\n\n### Sourcemaps\n\nBecause of browser limitations, sourcemaps are only available in conjunction with the [extract-text-webpack-plugin](https://github.com/webpack/extract-text-webpack-plugin). Use that plugin to extract the CSS code from the generated JS bundle into a separate file (which improves performance because JS and CSS are loaded in parallel).\n\n**webpack.config.js**\n```js\nconst ExtractTextPlugin = require('extract-text-webpack-plugin');\n\nmodule.exports = {\n  // must be 'source-map' or 'inline-source-map'\n  devtool: 'source-map',\n  module: {\n    rules: [\n      {\n        test: /\\.less$/,\n        use: ExtractTextPlugin.extract(\n          fallbackLoader: 'style-loader',\n          loaders: [\n            // activate source maps via loader query\n            {\n              loader: 'css-loader',\n              options: { sourceMap: true, importLoaders: 1 }\n            },\n            {\n              loader: 'less-loader',\n              options: { sourceMap: true }\n            }\n          ]\n        )\n      }\n    ]\n  },\n  plugins: [\n    // extract CSS into separate file\n    new ExtractTextPlugin('app.bundle.css')\n  ]\n}\n```\n\nIf you want to view the original LESS files inside Chrome and even edit it,  [there's a good blog post](https://medium.com/@toolmantim/getting-started-with-css-sourcemaps-and-in-browser-sass-editing-b4daab987fb0). Checkout [test/sourceMap](https://github.com/webpack/less-loader/tree/master/test) for a running example. Make sure to serve the content with an HTTP server.\n\n## Contributing\n\nDon't hesitate to create a pull request. Every contribution is appreciated. In development you can start the tests by calling `npm test`.\n\nThe tests are basically just comparing the generated css with a reference css-file located under `test/css`. You can easily generate a reference css-file by calling `node test/helpers/generateCss.js <less-file-without-less-extension>`. It passes the less-file to less and writes the output to the `test/css`-folder.\n\n## Maintainer\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150 height=\"150\" src=\"https://github.com/jhnns.png?s=150\">\n        <br>\n        <a href=\"https://github.com/jhnns\">Johannes Ewald</a>\n      </td>\n    <tr>\n  <tbody>\n</table>\n\n\n[npm]: https://img.shields.io/npm/v/less-loader.svg\n[npm-url]: https://npmjs.com/package/less-loader\n\n[node]: https://img.shields.io/node/v/less-loader.svg\n[node-url]: https://nodejs.org\n\n[deps]: https://david-dm.org/webpack/less-loader.svg\n[deps-url]: https://david-dm.org/webpack/less-loader\n\n[tests]: http://img.shields.io/travis/webpack/less-loader.svg\n[tests-url]: https://travis-ci.org/webpack/less-loader\n\n[cover]: https://coveralls.io/repos/github/webpack/less-loader/badge.svg\n[cover-url]: https://coveralls.io/github/webpack/less-loader\n\n[chat]: https://badges.gitter.im/webpack/webpack.svg\n[chat-url]: https://gitter.im/webpack/webpack\n"
-	};
-
-/***/ },
-/* 305 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "mocha-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/mocha-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/mocha-loader/edit/master/README.md",
-		"__content": "\n# mocha loader for webpack\n\n## Usage\n\n### Command Line\n\n*Hint*: when using `!` in the bash command line, you must escape it by prepending a `\\`\n\n``` text\nwebpack-dev-server 'mocha!./my-client-tests.js' --options webpackOptions.js\n```\n\n``` text\nenhanced-require 'mocha!./my-server-tests.js'\n```\n### Config\n#### webpack.config.js\n\n```js\n\nmodule.exports = {\n    entry: './entry-file.js',\n    output: {\n        path: __dirname,\n        filename: 'bundle.js'\n    }\n}\n```\n\n#### entry-file.js\n```js\n/*additional setup with other loaders (polyfills, ...)*/\nconst context = require.context(/*directory*/'mocha-loader!./tests', /*recursive*/true, /*match files*//_test.js$/);\ncontext.keys().forEach(context);\n```\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 306 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "multi-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/multi-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/multi-loader/edit/master/README.md",
-		"__content": "\n# multi-loader\n\nThis loader requires a module multiple times, each time loaded with a different loader. Like in a multi entry point the exports of the last item are exported.\n\nA normal user probably don't need this loader, but it's useful in combination with other loaders.\n\nExample:\n\n``` javascript\nvar multi = require(\"multi-loader\");\n{\n\tmodule: {\n\t\tloaders: [\n\t\t\t{\n\t\t\t\ttest: /\\.css$/,\n\t\t\t\t// Add CSS to the DOM\n\t\t\t\t// and\n\t\t\t\t// Return the raw content\n\t\t\t\tloader: multi(\n\t\t\t\t\t\"style-loader!css-loader!autoprefixer-loader\",\n\t\t\t\t\t\"raw-loader\"\n\t\t\t\t)\n\t\t\t}\n\t\t]\n\t}\n}\n```\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 307 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "node-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/node-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/node-loader/edit/master/README.md",
-		"__content": "\n## Install\n\n```bash\nnpm install --save-dev node-loader\n```\n\n## Usage\n\nExecutes [node add-ons](https://nodejs.org/dist/latest/docs/api/addons.html) in [enhanced-require](https://github.com/webpack/enhanced-require).\n\nUse the loader either via your webpack config, CLI or inline.\n\n### Via webpack config (recommended)\n\n**webpack.config.js**\n```js\nmodule.exports = {\n  module: {\n    rules: [\n      {\n        test: /\\.node$/,\n        use: 'node-loader'\n      }\n    ]\n  }\n}\n```\n\n**In your application**\n```js\nimport node from 'file.node';\n```\n\n### CLI\n\n```bash\nwebpack --module-bind 'node=node-loader'\n```\n\n**In your application**\n```js\nimport node from 'file.node';\n```\n\n### Inline\n\n**In your application**\n```js\nimport node from 'node-loader!./file.node';\n```\n\n## Maintainer\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150 height=\"150\" src=\"https://github.com/sokra.png?s=150\">\n        <br>\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\n      </td>\n    <tr>\n  <tbody>\n</table>\n\n\n[npm]: https://img.shields.io/npm/v/node-loader.svg\n[npm-url]: https://npmjs.com/package/node-loader\n\n[node]: https://img.shields.io/node/v/node-loader.svg\n[node-url]: https://nodejs.org\n\n[deps]: https://david-dm.org/webpack/node-loader.svg\n[deps-url]: https://david-dm.org/webpack/node-loader\n\n[tests]: http://img.shields.io/travis/webpack/node-loader.svg\n[tests-url]: https://travis-ci.org/webpack/node-loader\n\n[cover]: https://coveralls.io/repos/github/webpack/node-loader/badge.svg\n[cover-url]: https://coveralls.io/github/webpack/node-loader\n\n[chat]: https://badges.gitter.im/webpack/webpack.svg\n[chat-url]: https://gitter.im/webpack/webpack\n"
-	};
-
-/***/ },
-/* 308 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "null-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/null-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/null-loader/edit/master/README.md",
-		"__content": "\n# null-loader\n\nA loader that returns an empty module.\n"
-	};
-
-/***/ },
-/* 309 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "raw-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/raw-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/raw-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```bash\r\nnpm install --save-dev raw-loader\r\n```\r\n\r\n## Usage\r\n\r\nUse the loader either via your webpack config, CLI or inline.\r\n\r\n### Via webpack config (recommended)\r\n\r\n**webpack.config.js**\r\n```js\r\nmodule.exports = {\r\n  module: {\r\n    rules: [\r\n      {\r\n        test: /\\.txt$/,\r\n        use: 'raw-loader'\r\n      }\r\n    ]\r\n  }\r\n}\r\n```\r\n\r\n**In your application**\r\n```js\r\nimport txt from 'file.txt';\r\n```\r\n\r\n### CLI\r\n\r\n```bash\r\nwebpack --module-bind 'txt=raw-loader'\r\n```\r\n\r\n**In your application**\r\n```js\r\nimport txt from 'file.txt';\r\n```\r\n\r\n### Inline\r\n\r\n**In your application**\r\n```js\r\nimport txt from 'raw-loader!./file.txt';\r\n```\r\n\r\n## Maintainers\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150\" height=\"150\" src=\"https://avatars.githubusercontent.com/sokra?v=3\">\r\n        </br>\r\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\r\n      </td>\r\n    </tr>\r\n  </tbody>\r\n</table>\r\n\r\n[npm]: https://img.shields.io/npm/v/raw-loader.svg\r\n[npm-url]: https://npmjs.com/package/raw-loader\r\n\r\n[node]: https://img.shields.io/node/v/raw-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack/raw-loader.svg\r\n[deps-url]: https://david-dm.org/webpack/raw-loader\r\n\r\n[tests]: http://img.shields.io/travis/webpack/raw-loader.svg\r\n[tests-url]: https://travis-ci.org/webpack/raw-loader\r\n\r\n[cover]: https://coveralls.io/repos/github/webpack/raw-loader/badge.svg\r\n[cover-url]: https://coveralls.io/github/webpack/raw-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 310 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "react-proxy-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/react-proxy-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/react-proxy-loader/edit/master/README.md",
-		"__content": "\n# react-proxy-loader\n\nWraps a react component in a proxy component to enable Code Splitting (loads a react component and its dependencies on demand).\n\n## installation\n\n`npm install react-proxy-loader`\n\n## Usage\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\n``` js\nvar Component = require(\"react-proxy-loader!./Component\");\n// => returns the proxied component (It loads on demand.)\n// (webpack creates an additional chunk for this component and its dependencies)\n\nvar ComponentProxyMixin = require(\"react-proxy-loader!./Component\").Mixin;\n// => returns a mixin for the proxied component\n// (This allows you to setup rendering for the loading state for the proxy)\nvar ComponentProxy = React.createClass({\n\tmixins: [ComponentProxyMixin],\n\trenderUnavailable: function() {\n\t\treturn <p>Loading...</p>;\n\t}\n});\n```\n\nThe proxy is a react component. All properties are transferred to the wrapped component.\n\n### Configuration\n\nInstead of (or in addition to) inlining the loader call you can also specify the proxied components in your configuration:\n\n``` js\nmodule.exports = {\n\tmodule: {\n\t\tloaders: [\n\t\t\t/* ... */\n\t\t\t{\n\t\t\t\ttest: [\n\t\t\t\t\t/component\\.jsx$/, // select component by RegExp\n\t\t\t\t\t/\\.async\\.jsx$/, // select component by extension\n\t\t\t\t\t\"/abs/path/to/component.jsx\" // absolute path to component\n\t\t\t\t],\n\t\t\t\tloader: \"react-proxy-loader\"\n\t\t\t}\n\t\t]\n\t}\n};\n```\n\n### Chunk name\n\nYou can give the chunk a name with the `name` query parameter:\n\n``` js\nvar Component = require(\"react-proxy-loader?name=chunkName!./Component\");\n```\n\n# License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 311 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "script-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/script-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/script-loader/edit/master/README.md",
-		"__content": "\n# script loader for webpack\r\n\r\n## Usage\r\n\r\n``` javascript\r\nrequire(\"script-loader!./file.js\");\r\n// => execute file.js once in global context\r\n```\r\n\r\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\r\n\r\nDoes nothing in node.js.\r\n\r\n## License\r\n\r\nMIT (http://www.opensource.org/licenses/mit-license.php)\r\n"
-	};
-
-/***/ },
-/* 312 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "source-map-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/source-map-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/source-map-loader/edit/master/README.md",
-		"__content": "\n# source map loader for webpack\n\nExtracts SourceMaps for source files that as added as `sourceMappingURL` comment.\n\n## Usage\n\n[Documentation: Using loaders](https://webpack.js.org/concepts/#loaders)\n\n\n### Example webpack config\n\n``` javascript\nmodule.exports = {\n  module: {\n    rules: [\n      {\n        test: /\\.js$/,\n        use: [\"source-map-loader\"],\n        enforce: \"pre\"\n      }\n    ]\n  }\n};\n```\n\nThis extracts all SourceMaps from all files. That's not so performance-wise so you may only want to apply the loader to relevant files.\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 313 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "style-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/style-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/style-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```\r\nnpm install style-loader --save-dev\r\n```\r\n\r\n## Usage\r\n\r\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\r\n\r\n### Simple API\r\n\r\n``` javascript\r\nrequire(\"style-loader!raw-loader!./file.css\");\r\n// => add rules in file.css to document\r\n```\r\n\r\nIt's recommended to combine it with the [`css-loader`](https://github.com/webpack/css-loader): `require(\"style-loader!css-loader!./file.css\")`.\r\n\r\nIt's also possible to add a URL instead of a CSS string:\r\n\r\n``` javascript\r\nrequire(\"style-loader/url!file-loader!./file.css\");\r\n// => add a <link rel=\"stylesheet\"> to file.css to document\r\n```\r\n\r\n### Local scope CSS\r\n\r\n(experimental)\r\n\r\nWhen using [local scope CSS](https://github.com/webpack/css-loader#local-scope) the module exports the generated identifiers:\r\n\r\n``` javascript\r\nvar style = require(\"style-loader!css-loader!./file.css\");\r\nstyle.placeholder1 === \"z849f98ca812bc0d099a43e0f90184\"\r\n```\r\n\r\n### Reference-counted API\r\n\r\n``` javascript\r\nvar style = require(\"style-loader/useable!css-loader!./file.css\");\r\nstyle.use(); // = style.ref();\r\nstyle.unuse(); // = style.unref();\r\n```\r\n\r\nStyles are not added on `require`, but instead on call to `use`/`ref`. Styles are removed from page if `unuse`/`unref` is called exactly as often as `use`/`ref`.\r\n\r\nNote: Behavior is undefined when `unuse`/`unref` is called more often than `use`/`ref`. Don't do that.\r\n\r\n### Options\r\n\r\n#### `insertAt`\r\n\r\nBy default, the style-loader appends `<style>` elements to the end of the `<head>` tag of the page. This will cause CSS created by the loader to take priority over CSS already present in the document head. To insert style elements at the beginning of the head, set this query parameter to 'top', e.g. `require('../style.css?insertAt=top')`.\r\n\r\n#### `singleton`\r\n\r\nIf defined, the style-loader will re-use a single `<style>` element, instead of adding/removing individual elements for each required module. **Note:** this option is on by default in IE9, which has strict limitations on the number of style tags allowed on a page. You can enable or disable it with the singleton query parameter (`?singleton` or `?-singleton`).\r\n\r\n### Recommended configuration\r\n\r\nBy convention the reference-counted API should be bound to `.useable.css` and the simple API to `.css` (similar to other file types, i.e. `.useable.less` and `.less`).\r\n\r\nSo the recommended configuration for webpack is:\r\n\r\n``` javascript\r\n{\r\n  module: {\r\n    rules: [\r\n      {\r\n        test: /\\.css$/,\r\n        use: [\r\n          { loader: \"style-loader\" },\r\n          { loader: \"css-loader\" },\r\n        ],\r\n      },\r\n      {\r\n        test: /\\.useable\\.css$/,\r\n        use: [\r\n          { \r\n            loader: \"style-loader\",\r\n            options: {\r\n              useable: true\r\n            },\r\n          },\r\n          { loader: \"css-loader\" },\r\n        ],\r\n      },\r\n    ],\r\n  },\r\n}\r\n```\r\n\r\n**Note** about source maps support and assets referenced with `url`: when style loader is used with ?sourceMap option, the CSS modules will be generated as `Blob`s, so relative paths don't work (they would be relative to `chrome:blob` or `chrome:devtools`). In order for assets to maintain correct paths setting `output.publicPath` property of webpack configuration must be set, so that absolute paths are generated.\r\n\r\n## Contributing\r\n\r\nDon't hesitate to create a pull request. Every contribution is appreciated. In development you can start the tests by calling `npm test`.\r\n\r\n## Maintainers\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150 height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/sokra?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Tobias Koppers</a>\r\n      </td>\r\n      <td align=\"center\">\r\n        <img width=\"150 height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/SpaceK33z?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Kees Kluskens</a>\r\n      </td>\r\n    <tr>\r\n  <tbody>\r\n</table>\r\n\r\n\r\n## LICENSE\r\n\r\n#### [MIT](./LICENSE)\r\n\r\n[npm]: https://img.shields.io/npm/v/style-loader.svg\r\n[npm-url]: https://npmjs.com/package/style-loader\r\n\r\n[node]: https://img.shields.io/node/v/style-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack/style-loader.svg\r\n[deps-url]: https://david-dm.org/webpack/file-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 314 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "transform-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/transform-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/transform-loader/edit/master/README.md",
-		"__content": "\n# transform loader for webpack\n\nUse a browserify transforms as webpack-loader\n\n## Usage\n\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\n\nPass the module name as query parameter.\n\n``` javascript\nvar x = require(\"!transform-loader?brfs!./file.js\");\nvar x = require(\"!transform-loader/cacheable?brfs!./file.js\"); // cacheable version\n```\n\nIf you pass a number instead it will take the function from `this.options.transforms[number]`.\n\n### Example webpack 2 config\n\n``` javascript\nmodule.exports = {\n  module: {\n    rules: [\n      {\n        loader: \"transform-loader?brfs\",\n        enforce: \"post\"\n      },\n\t\t\t{\n        test: /\\.coffee$/,\n        loader: \"transform-loader/cacheable?coffeeify\"\n      },\n      {\n        test: /\\.weirdjs$/,\n        loader: \"transform-loader?0\"\n      }\n    ]\n  },\n  plugins: [\n    new webpack.LoaderOptionsPlugin({\n      options: {\n        transforms: [\n          function(file) {\n            return through(function(buf) {\n              this.queue(buf.split(\"\").map(function(s) {\n                return String.fromCharCode(127-s.charCodeAt(0));\n              }).join(\"\"));\n            }, function() { this.queue(null); });\n          }\n        ]\n      }\n    })\n  ]\n};\n```\n\n### Example webpack 1 config\n\n``` javascript\nmodule.exports = {\n\tmodule: {\n\t\tpostLoaders: [\n\t\t\t{\n\t\t\t\tloader: \"transform-loader?brfs\"\n\t\t\t}\n\t\t]\n\t\tloaders: [\n\t\t\t{\n\t\t\t\ttest: /\\.coffee$/,\n\t\t\t\tloader: \"transform-loader/cacheable?coffeeify\"\n\t\t\t},\n\t\t\t{\n\t\t\t\ttest: /\\.weirdjs$/,\n\t\t\t\tloader: \"transform-loader?0\"\n\t\t\t}\n\t\t]\n\t},\n\ttransforms: [\n\t\tfunction(file) {\n\t\t\treturn through(function(buf) {\n\t\t\t\tthis.queue(buf.split(\"\").map(function(s) {\n\t\t\t\t\treturn String.fromCharCode(127-s.charCodeAt(0));\n\t\t\t\t}).join(\"\"));\n\t\t\t}, function() { this.queue(null); });\n\t\t}\n\t]\n};\n```\n\n### Typical brfs Example\n\nSay you have the following Node source:\n\n```js\nvar test = require('fs').readFileSync('./test.txt', 'utf8');\n```\n\nAfter `npm install transform-loader brfs --save`, add the following loader to your config:\n\n```js\nmodule.exports = {\n    context: __dirname,\n    entry: \"./index.js\",\n    module: {\n        loaders: [\n            {\n                test: /\\.js$/,\n                loader: \"transform-loader?brfs\"\n            }\n        ]\n    }\n}\n```\n\nThe loader is applied to all JS files, which can incur a performance hit with watch tasks. So you may want to use `transform-loader/cacheable?brfs` instead. \n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 315 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "url-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/url-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/url-loader/edit/master/README.md",
-		"__content": "\n## Install\r\n\r\n```bash\r\nnpm install --save-dev url-loader\r\n```\r\n\r\n## Usage\r\n\r\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\r\n\r\nThe `url` loader works like the `file` loader, but can return a Data Url if the file is smaller than a byte limit.\r\n\r\nThe limit can be specified with a query parameter. (Defaults to no limit)\r\n\r\nIf the file is greater than the limit (in bytes) the [`file-loader`](https://github.com/webpack/file-loader) is used and all query parameters are passed to it.\r\n\r\n``` javascript\r\nrequire(\"url-loader?limit=10000!./file.png\");\r\n// => DataUrl if \"file.png\" is smaller than 10kb\r\n\r\nrequire(\"url-loader?mimetype=image/png!./file.png\");\r\n// => Specify mimetype for the file (Otherwise it's inferred from extension.)\r\n\r\nrequire(\"url-loader?prefix=img/!./file.png\");\r\n// => Parameters for the file-loader are valid too\r\n//    They are passed to the file-loader if used.\r\n```\r\n\r\n## Contributing\r\n\r\nDon't hesitate to create a pull request. Every contribution is appreciated. In development you can start the tests by calling `npm test`.\r\n\r\n## Maintainers\r\n\r\n<table>\r\n  <tbody>\r\n    <tr>\r\n      <td align=\"center\">\r\n        <img width=\"150 height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/sokra?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Tobias Koppers</a>\r\n      </td>\r\n      <td align=\"center\">\r\n        <img width=\"150 height=\"150\"\r\n        src=\"https://avatars.githubusercontent.com/SpaceK33z?v=3\">\r\n        <br />\r\n        <a href=\"https://github.com/\">Kees Kluskens</a>\r\n      </td>\r\n    <tr>\r\n  <tbody>\r\n</table>\r\n\r\n\r\n## LICENSE\r\n\r\n#### [MIT](./LICENSE)\r\n\r\n[npm]: https://img.shields.io/npm/v/url-loader.svg\r\n[npm-url]: https://npmjs.com/package/url-loader\r\n\r\n[node]: https://img.shields.io/node/v/url-loader.svg\r\n[node-url]: https://nodejs.org\r\n\r\n[deps]: https://david-dm.org/webpack/url-loader.svg\r\n[deps-url]: https://david-dm.org/webpack/url-loader\r\n\r\n[tests]: http://img.shields.io/travis/webpack/url-loader.svg\r\n[tests-url]: https://travis-ci.org/webpack/url-loader\r\n\r\n[cover]: https://coveralls.io/repos/github/webpack/url-loader/badge.svg\r\n[cover-url]: https://coveralls.io/github/webpack/url-loader\r\n\r\n[chat]: https://badges.gitter.im/webpack/webpack.svg\r\n[chat-url]: https://gitter.im/webpack/webpack\r\n"
-	};
-
-/***/ },
-/* 316 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "val-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/val-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/val-loader/edit/master/README.md",
-		"__content": "\n# val loader for webpack\r\n\r\n## Usage\r\n\r\n``` javascript\r\nvar a = require(\"val-loader!./file.js\");\r\n// => excute file.js while compiling and \r\n//    take the result as javascript code for including\r\n```\r\n\r\nDon't forget to polyfill `require` if you want to use it in node.\r\nSee `webpack` documentation.\r\n\r\nThe excution of file.js has polyfill already applied.\r\n\r\nThis loader is also useful if you want to provide data for another loader:\r\n\r\n``` javascript\r\nrequire(\"css-loader!val-loader!./generateCss.js\");\r\n```\r\n\r\n## License\r\n\r\nMIT (http://www.opensource.org/licenses/mit-license.php)\r\n"
-	};
-
-/***/ },
-/* 317 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "worker-loader",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/worker-loader/master/README.md",
-		"edit": "https://github.com/webpack-contrib/worker-loader/edit/master/README.md",
-		"__content": "\n# worker loader for webpack\r\n\r\n## Usage\r\n\r\n[Documentation: Using loaders](http://webpack.github.io/docs/using-loaders.html)\r\n\r\nImport the worker file:\r\n\r\n``` javascript\r\n// main.js\r\nvar MyWorker = require(\"worker-loader!./file.js\");\r\n\r\nvar worker = new MyWorker();\r\nworker.postMessage({a: 1});\r\nworker.onmessage = function(event) {...};\r\nworker.addEventListener(\"message\", function(event) {...});\r\n```\r\n\r\nYou can also inline the worker as a blob with the `inline` parameter:\r\n``` javascript\r\nvar MyWorker = require(\"worker-loader?inline!./file.js\");\r\n```\r\n\r\n\r\nThe worker file can import dependencies just like any other file:\r\n\r\n``` javascript\r\n// file.js\r\nvar _ = require('lodash')\r\n\r\nvar o = {foo: 'foo'}\r\n\r\n_.has(o, 'foo') // true\r\n```\r\n\r\nYou can even use ES6 modules if you have the babel-loader configured:\r\n\r\n``` javascript\r\n// file.js\r\nimport _ from 'lodash'\r\n\r\nlet o = {foo: 'foo'}\r\n\r\n_.has(o, 'foo') // true\r\n```\r\n\r\n## License\r\n\r\nMIT (http://www.opensource.org/licenses/mit-license.php)\r\n"
-	};
-
-/***/ },
-/* 318 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "component-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/component-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/component-webpack-plugin/edit/master/README.md",
-		"__content": "\n# component for webpack\n\n## Usage\n\nsee an example here: [webpack/webpack/examples/component](https://github.com/webpack/webpack/tree/master/examples/component)\n\n``` javascript\nvar ComponentPlugin = require(\"component-webpack-plugin\");\nmodule.exports = {\n\tplugins: [\n\t\tnew ComponentPlugin();\n\t]\n}\n```\n\n## Advanced usage\n\n``` javascript\nvar ComponentPlugin = require(\"component-webpack-plugin\");\nmodule.exports = {\n\tplugins: [\n\t\tnew ComponentPlugin({\n\t\t\t// Load xyz field in component.json\n\t\t\txyz: true,\n\t\t\t// This is equal to: xyz: \"[file]\"\n\t\t\t\n\t\t\t// Load xyz field with the xyz-loader\n\t\t\txyz: \"!xyz-loader![file]\",\n\t\t\t\n\t\t\t// This is default:\n\t\t\t// styles: \"!style-loader!css-loader![file]\"\n\t\t}, [\n\t\t\t// Lookup paths\n\t\t\t\"component\"\n\t\t]);\n\t]\n}\n```\n\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)"
-	};
-
-/***/ },
-/* 319 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "compression-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/compression-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/compression-webpack-plugin/edit/master/README.md",
-		"__content": "\n# compression plugin for webpack\n\n## Usage\n\n``` javascript\nvar CompressionPlugin = require(\"compression-webpack-plugin\");\nmodule.exports = {\n\tplugins: [\n\t\tnew CompressionPlugin({\n\t\t\tasset: \"[path].gz[query]\",\n\t\t\talgorithm: \"gzip\",\n\t\t\ttest: /\\.js$|\\.html$/,\n\t\t\tthreshold: 10240,\n\t\t\tminRatio: 0.8\n\t\t})\n\t]\n}\n```\n\nArguments:\n\n* `asset`: The target asset name. `[file]` is replaced with the original asset. `[path]` is replaced with the path of the original asset and `[query]` with the query. Defaults to `\"[path].gz[query]\"`.\n* `algorithm`: Can be a `function(buf, callback)` or a string. For a string the algorithm is taken from `zlib` (or zopfli for `zopfli`). Defaults to `\"gzip\"`.\n* `test`: All assets matching this RegExp are processed. Defaults to every asset.\n* `threshold`: Only assets bigger than this size are processed. In bytes. Defaults to `0`.\n* `minRatio`: Only assets that compress better that this ratio are processed. Defaults to `0.8`.\n\nOption Arguments for Zopfli (see [node-zopfli](https://github.com/pierreinglebert/node-zopfli#options) doc for details):\n* verbose: Default: false,\n* verbose_more: Default: false,\n* numiterations: Default: 15,\n* blocksplitting: Default: true,\n* blocksplittinglast: Default: false,\n* blocksplittingmax: Default: 15\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)"
-	};
-
-/***/ },
-/* 320 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "extract-text-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/extract-text-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/extract-text-webpack-plugin/edit/master/README.md",
-		"__content": "\n## Install\n\n```bash\nnpm install --save-dev extract-text-webpack-plugin\n```\n\n## Usage\n\n> :warning: For webpack v1, see [the README in the webpack-1 branch](https://github.com/webpack/extract-text-webpack-plugin/blob/webpack-1/README.md).\n\n```js\nconst ExtractTextPlugin = require(\"extract-text-webpack-plugin\");\n\nmodule.exports = {\n  module: {\n    rules: [\n      {\n        test: /\\.css$/,\n        use: ExtractTextPlugin.extract({\n          fallbackLoader: \"style-loader\",\n          loader: \"css-loader\"\n        })\n      }\n    ]\n  },\n  plugins: [\n    new ExtractTextPlugin(\"styles.css\"),\n  ]\n}\n```\n\nIt moves every `require(\"style.css\")` in entry chunks into a separate CSS file. So your styles are no longer inlined into the JS bundle, but separate in a CSS bundle file (`styles.css`). If your total stylesheet volume is big, it will be faster because the CSS bundle is loaded in parallel to the JS bundle.\n\n|Advantages|Caveats|\n|:---------|:------|\n| Fewer style tags (older IE has a limit) | Additional HTTP request |\n| CSS SourceMap (with `devtool: \"source-map\"` and `extract-text-webpack-plugin?sourceMap`) | Longer compilation time |\n| CSS requested in parallel | No runtime public path modification |\n| CSS cached separate | No Hot Module Replacement |\n| Faster runtime (less code and DOM operations) | ... |\n\n## Options\n\n```js\nnew ExtractTextPlugin(options: filename | object)\n```\n\n|Name|Type|Description|\n|:--:|:--:|:----------|\n|**`id`**|`{String}`|Unique ident for this plugin instance. (For advanced usage only, by default automatically generated)|\n|**`filename`**|`{String}`|Name of the result file. May contain `[name]`, `[id]` and `[contenthash]`|\n|**`options.allChunks`**|`{Boolean}`|Extract from all additional chunks too (by default it extracts only from the initial chunk(s))|\n|**`options.disable`**|`{Boolean}`|Disables the plugin|\n\n* `[name]` name of the chunk\n* `[id]` number of the chunk\n* `[contenthash]` hash of the content of the extracted file\n\n> :warning: `ExtractTextPlugin` generates a file **per entry**, so you must use `[name]`, `[id]` or `[contenthash]` when using multiple entries.\n\n#### `#extract`\n\n```js\nExtractTextPlugin.extract(options: loader | object)\n```\n\nCreates an extracting loader from an existing loader. Supports loaders of type `{ loader: [name]-loader -> {String}, options: {} -> {Object} }`.\n\n|Name|Type|Description|\n|:--:|:--:|:----------|\n|**`options.loader`**|`{String}`/`{Object}`|Loader(s) that should be used for converting the resource to a CSS exporting module _(required)_|\n|**`options.fallbackLoader`**|`{String}`/`{Object}`|loader(e.g `'style-loader'`) that should be used when the CSS is not extracted (i.e. in an additional chunk when `allChunks: false`)|\n|**`options.publicPath`**|`{String}`|Override the `publicPath` setting for this loader|\n\n\n#### Multiple Instances\n\nThere is also an `extract` function on the instance. You should use this if you have more than one instance of  `ExtractTextPlugin`.\n\n```js\nconst ExtractTextPlugin = require('extract-text-webpack-plugin');\n\n// Create multiple instances\nconst extractCSS = new ExtractTextPlugin('stylesheets/[name].css');\nconst extractLESS = new ExtractTextPlugin('stylesheets/[name].less');\n\nmodule.exports = {\n  module: {\n    use: [\n      {\n        test: /\\.css$/,\n        use: extractCSS.extract([ 'css-loader', 'postcss-loader' ])\n      },\n      {\n        test: /\\.html$/i,\n        use: extractLESS.extract([ 'css-loader', 'less-loader' ])\n      },\n    ]\n  },\n  plugins: [\n    extractCSS,\n    extractLESS\n  ]\n};\n```\n\n## Maintainer\n\n<table>\n  <tbody>\n    <tr>\n      <td align=\"center\">\n        <img width=\"150 height=\"150\" src=\"https://github.com/sokra.png?s=150\">\n        <br>\n        <a href=\"https://github.com/sokra\">Tobias Koppers</a>\n      </td>\n    <tr>\n  <tbody>\n</table>\n\n\n[npm]: https://img.shields.io/npm/v/extract-text-webpack-plugin.svg\n[npm-url]: https://npmjs.com/package/extract-text-webpack-plugin\n\n[node]: https://img.shields.io/node/v/extract-text-webpack-plugin.svg\n[node-url]: https://nodejs.org\n\n[deps]: https://david-dm.org/webpack-contrib/extract-text-webpack-plugin.svg\n[deps-url]: https://david-dm.org/webpack-contrib/extract-text-webpack-plugin\n\n[tests]: http://img.shields.io/travis/webpack-contrib/extract-text-webpack-plugin.svg\n[tests-url]: https://travis-ci.org/webpack-contrib/extract-text-webpack-plugin\n\n[cover]: https://coveralls.io/repos/github/webpack-contrib/extract-text-webpack-plugin/badge.svg\n[cover-url]: https://coveralls.io/github/webpack-contrib/extract-text-webpack-plugin\n\n[chat]: https://badges.gitter.im/webpack/webpack.svg\n[chat-url]: https://gitter.im/webpack/webpack\n"
-	};
-
-/***/ },
-/* 321 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "i18n-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/i18n-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/i18n-webpack-plugin/edit/master/README.md",
-		"__content": "\n# i18n plugin for webpack\n\n## Usage\n\nsee [webpack/webpack/examples/i18n](https://github.com/webpack/webpack/tree/master/examples/i18n).\n\n## Options\n\n```\nplugins: [\n  ...\n  new I18nPlugin(languageConfig, optionsObj)\n],\n```\n - `optionsObj.functionName`: the default value is `__`, you can change it to other function name.\n - `optionsObj.failOnMissing`: the default value is `false`, which will show a warning message, if the mapping text cannot be found. If set to `true`, the message will be an error message.\n - `optionsObj.hideMessage`: the default value is `false`, which will show the warning/error message. If set to `true`, the message will be hide.\n\n## License\n\nMIT (http://www.opensource.org/licenses/mit-license.php)\n"
-	};
-
-/***/ },
-/* 322 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "npm-install-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/npm-install-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/npm-install-webpack-plugin/edit/master/README.md",
-		"__content": "\n# npm-install-webpack-plugin\n\n> Speed up development by **automatically installing & saving dependencies** with Webpack.\n>\n> [![npm-install-webpack-plugin mp4](https://cloud.githubusercontent.com/assets/15182/12540538/6a4e8f1a-c2d0-11e5-97ee-4ddaf6892645.gif)](https://dl.dropboxusercontent.com/u/55764/npm-install-webpack-plugin.mp4)\n\n## Features\n\n- [x] Works with both Webpack `^v1.12.0` and `^2.1.0-beta.0`.\n- [x] Auto-installs `.babelrc` plugins & presets.\n- [x] Supports both ES5 & ES6 Modules.\n  (e.g. `require`, `import`)\n- [x] Supports Namespaced packages.\n  (e.g. `@cycle/dom`)\n- [x] Supports Dot-delimited packages.\n  (e.g. `lodash.capitalize`)\n- [x] Supports CSS imports.\n  (e.g. `@import \"~bootstrap\"`)\n- [x] Supports Webpack loaders.\n  (e.g. `babel-loader`, `file-loader`, etc.)\n- [x] Supports inline Webpack loaders.\n  (e.g. `require(\"bundle?lazy!./App\"`)\n- [x] Auto-installs missing `peerDependencies`.\n  (e.g. `@cycle/core` will automatically install `rx@*`)\n- [x] Supports Webpack's `resolve.alias` & `resolve.root` configuration.\n  (e.g. `require(\"react\")` can alias to `react-lite`)\n\n[![travis build](https://img.shields.io/travis/ericclemmons/npm-install-webpack-plugin.svg)](https://travis-ci.org/ericclemmons/npm-install-webpack-plugin)\n[![Coverage Status](https://coveralls.io/repos/ericclemmons/npm-install-webpack-plugin/badge.svg?branch=master&service=github)](https://coveralls.io/github/ericclemmons/npm-install-webpack-plugin?branch=master)\n[![version](https://img.shields.io/npm/v/npm-install-webpack-plugin.svg)](http://npm.im/npm-install-webpack-plugin)\n[![downloads](https://img.shields.io/npm/dm/npm-install-webpack-plugin.svg)](http://npm-stat.com/charts.html?package=npm-install-webpack-plugin)\n[![MIT License](https://img.shields.io/npm/l/npm-install-webpack-plugin.svg)](http://opensource.org/licenses/MIT)\n\n- - -\n\n### Why?\n\nIt sucks to <kbd>Ctrl-C</kbd> your\nbuild script & server just to install\na dependency you didn't know you needed until now.\n\nInstead, use `require` or `import` how you normally would and `npm install`\nwill happen **automatically to install & save missing dependencies** while you work!\n\n### Installation\n\n```shell\n$ npm install --save-dev npm-install-webpack-plugin\n```\n\n### Usage\n\nIn your `webpack.config.js`:\n\n```js\nplugins: [\n  new NpmInstallPlugin();\n],\n```\n\n**This is equivalent to**:\n\n```js\nplugins: [\n  new NpmInstallPlugin({\n    // Use --save or --save-dev\n    dev: false,\n    // Install missing peerDependencies\n    peerDependencies: true,\n  });\n],\n```\n\nYou can provide a `Function` to the `dev` to make it dynamic:\n\n```js\nplugins: [\n  new NpmInstallPlugin({\n    dev: function(module, path) {\n      return [\n        \"babel-preset-react-hmre\",\n        \"webpack-dev-middleware\",\n        \"webpack-hot-middleware\",\n      ].indexOf(module) !== -1;\n    },\n  }),\n],\n```\n\n\n### License\n\n> MIT License 2016 © Eric Clemmons\n"
-	};
-
-/***/ },
-/* 323 */
-/***/ function(module, exports) {
-
-	module.exports = {
-		"title": "uglifyjs-webpack-plugin",
-		"source": "https://raw.githubusercontent.com/webpack-contrib/uglifyjs-webpack-plugin/master/README.md",
-		"edit": "https://github.com/webpack-contrib/uglifyjs-webpack-plugin/edit/master/README.md",
-		"__content": "\n[![build status](https://secure.travis-ci.org/webpack-contrib/uglifyjs-webpack-plugin.svg)](http://travis-ci.org/webpack-contrib/uglifyjs-webpack-plugin) [![bitHound Score](https://www.bithound.io/github/webpack-contrib/uglifyjs-webpack-plugin/badges/score.svg)](https://www.bithound.io/github/webpack-contrib/uglifyjs-webpack-plugin) [![codecov](https://codecov.io/gh/webpack-contrib/uglifyjs-webpack-plugin/branch/master/graph/badge.svg)](https://codecov.io/gh/webpack-contrib/uglifyjs-webpack-plugin)\n\n# UglifyJS Webpack Plugin\n\nThis plugin uses [UglifyJS](https://github.com/mishoo/UglifyJS2) to minify your JavaScript. It is the same plugin as in Webpack core except it has been decoupled from it. This allows you to control the version of UglifyJS you are using.\n\n> Note that webpack contains the same plugin under `webpack.optimize.UglifyJsPlugin`. This is a standalone version for those that want to control the version of UglifyJS. The documentation is valid apart from the installation instructions in that case.\n\n## Usage\n\nFirst, install the plugin:\n\n```bash\nyarn add uglifyjs-webpack-plugin --dev\n```\n\n..or if you insist on using npm instead of the more advanced [Yarn](https://yarnpkg.com):\n\n```bash\nnpm install uglifyjs-webpack-plugin --save-dev\n```\n\n**Important!** The plugin has a peer dependency to uglify-js, so in order to use the plugin, also uglify-js has to be installed. The currently (2017/1/25) available uglify-js npm packages, however, do not support minification of ES6 code. In order to support ES6, an ES6-capable, a.k.a. _harmony_, version of UglifyJS has to be provided.\n\nIf your minification target is ES6:\n\n```bash\nyarn add git://github.com/mishoo/UglifyJS2#harmony --dev\n```\n\nIf your minification target is ES5:\n\n```bash\nyarn add uglify-js --dev\n```\n\nThen configure as follows:\n\n```javascript\nconst UglifyJSPlugin = require('uglifyjs-webpack-plugin');\n\nmodule.exports = {\n  entry: {...},\n  output: {...},\n  module: {...},\n  plugins: [\n    new UglifyJSPlugin()\n  ]\n};\n```\n\nAnd, that's it!\n\n## Options\n\nThis plugin supports UglifyJS features as discussed below:\n\n| Property | Type | Default | Description |\n| --- | --- | --- | --- |\n| compress | boolean, object | true | See [UglifyJS documentation](http://lisperator.net/uglifyjs/compress). |\n| mangle | boolean, object | true | See below. |\n| beautify | boolean | false | Beautify output. |\n| output | An object providing options for UglifyJS [OutputStream](https://github.com/mishoo/UglifyJS2/blob/master/lib/output.js) | | Lower level access to UglifyJS output. |\n| comments | boolean, RegExp, function(astNode, comment) -> boolean | Defaults to preserving comments containing `/*!`, `/**!`, `@preserve` or `@license`. | Comment related configuration. |\n| sourceMap | boolean | false | Use SourceMaps to map error message locations to modules. This slows down the compilation. |\n| test | RegExp, Array<RegExp> | `/\\.js($|\\?)/i` | Test to match files against. |\n| include | RegExp, Array<RegExp> | | Test only `include` files. |\n| exclude | RegExp, Array<RegExp> | | Files to `exclude` from testing. |\n\n## Mangling\n\n`mangle.props (boolean|object)` - Passing `true` or an object enables and provides options for UglifyJS property mangling - see [UglifyJS documentation](https://github.com/mishoo/UglifyJS2#mangleproperties-options) for mangleProperties for options.\n\n> Note: the UglifyJS docs warn that [you will probably break your source if you use property mangling](https://github.com/mishoo/UglifyJS2#mangling-property-names---mangle-props), so if you aren’t sure why you’d need this feature, you most likely shouldn’t be using it! You can tweak the behavior as below:\n\n```javascript\nnew webpack.optimize.UglifyJsPlugin({\n  mangle: {\n    // Skip mangling these\n    except: ['$super', '$', 'exports', 'require']\n  }\n})\n```\n\n## License\n\nMIT.\n"
-	};
-
-/***/ },
-/* 324 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var Symbol = __webpack_require__(164),
-	    getRawTag = __webpack_require__(466),
-	    objectToString = __webpack_require__(467);
+	var Symbol = __webpack_require__(172),
+	    getRawTag = __webpack_require__(442),
+	    objectToString = __webpack_require__(443);
 
 	/** `Object#toString` result references. */
 	var nullTag = '[object Null]',
@@ -43250,14 +43616,14 @@ module.exports =
 	module.exports = baseGetTag;
 
 
-/***/ },
-/* 325 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 295 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var Symbol = __webpack_require__(164),
-	    arrayMap = __webpack_require__(463),
-	    isArray = __webpack_require__(469),
-	    isSymbol = __webpack_require__(327);
+	var Symbol = __webpack_require__(172),
+	    arrayMap = __webpack_require__(439),
+	    isArray = __webpack_require__(445),
+	    isSymbol = __webpack_require__(297);
 
 	/** Used as references for various `Number` constants. */
 	var INFINITY = 1 / 0;
@@ -43293,9 +43659,9 @@ module.exports =
 	module.exports = baseToString;
 
 
-/***/ },
-/* 326 */
-/***/ function(module, exports) {
+/***/ }),
+/* 296 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Checks if `value` is the
@@ -43330,12 +43696,12 @@ module.exports =
 	module.exports = isObject;
 
 
-/***/ },
-/* 327 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 297 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var baseGetTag = __webpack_require__(324),
-	    isObjectLike = __webpack_require__(471);
+	var baseGetTag = __webpack_require__(294),
+	    isObjectLike = __webpack_require__(447);
 
 	/** `Object#toString` result references. */
 	var symbolTag = '[object Symbol]';
@@ -43365,9 +43731,9 @@ module.exports =
 	module.exports = isSymbol;
 
 
-/***/ },
-/* 328 */
-/***/ function(module, exports) {
+/***/ }),
+/* 298 */
+/***/ (function(module, exports) {
 
 	
 	/* **********************************************
@@ -44166,9 +44532,56 @@ module.exports =
 	})();
 
 
-/***/ },
-/* 329 */
-/***/ function(module, exports) {
+/***/ }),
+/* 299 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 */
+
+	'use strict';
+
+	// React 15.5 references this module, and assumes PropTypes are still callable in production.
+	// Therefore we re-export development-only version with all the PropTypes checks here.
+	// However if one is migrating to the `prop-types` npm library, they will go through the
+	// `index.js` entry point, and it will branch depending on the environment.
+	var factory = __webpack_require__(457);
+	module.exports = function(isValidElement) {
+	  // It is still allowed in 15.5.
+	  var throwOnDirectAccess = false;
+	  return factory(isValidElement, throwOnDirectAccess);
+	};
+
+
+/***/ }),
+/* 300 */
+/***/ (function(module, exports) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 */
+
+	'use strict';
+
+	var ReactPropTypesSecret = 'SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED';
+
+	module.exports = ReactPropTypesSecret;
+
+
+/***/ }),
+/* 301 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -44202,7 +44615,13 @@ module.exports =
 	  flexNegative: true,
 	  flexOrder: true,
 	  gridRow: true,
+	  gridRowEnd: true,
+	  gridRowSpan: true,
+	  gridRowStart: true,
 	  gridColumn: true,
+	  gridColumnEnd: true,
+	  gridColumnSpan: true,
+	  gridColumnStart: true,
 	  fontWeight: true,
 	  lineClamp: true,
 	  lineHeight: true,
@@ -44318,9 +44737,9 @@ module.exports =
 
 	module.exports = CSSProperty;
 
-/***/ },
-/* 330 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 302 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -44441,9 +44860,9 @@ module.exports =
 
 	module.exports = PooledClass.addPoolingTo(CallbackQueue);
 
-/***/ },
-/* 331 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 303 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -44457,11 +44876,11 @@ module.exports =
 
 	'use strict';
 
-	var DOMProperty = __webpack_require__(35);
+	var DOMProperty = __webpack_require__(34);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactInstrumentation = __webpack_require__(13);
 
-	var quoteAttributeValueForBrowser = __webpack_require__(547);
+	var quoteAttributeValueForBrowser = __webpack_require__(524);
 	var warning = __webpack_require__(4);
 
 	var VALID_ATTRIBUTE_NAME_REGEX = new RegExp('^[' + DOMProperty.ATTRIBUTE_NAME_START_CHAR + '][' + DOMProperty.ATTRIBUTE_NAME_CHAR + ']*$');
@@ -44492,7 +44911,6 @@ module.exports =
 	 * Operations for dealing with DOM properties.
 	 */
 	var DOMPropertyOperations = {
-
 	  /**
 	   * Creates markup for the ID property.
 	   *
@@ -44677,14 +45095,13 @@ module.exports =
 	      });
 	    }
 	  }
-
 	};
 
 	module.exports = DOMPropertyOperations;
 
-/***/ },
-/* 332 */
-/***/ function(module, exports) {
+/***/ }),
+/* 304 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -44704,9 +45121,9 @@ module.exports =
 
 	module.exports = ReactDOMComponentFlags;
 
-/***/ },
-/* 333 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 305 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -44722,7 +45139,7 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var LinkedValueUtils = __webpack_require__(170);
+	var LinkedValueUtils = __webpack_require__(178);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactUpdates = __webpack_require__(15);
 
@@ -44908,9 +45325,9 @@ module.exports =
 
 	module.exports = ReactDOMSelect;
 
-/***/ },
-/* 334 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 306 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -44927,7 +45344,7 @@ module.exports =
 	var _assign = __webpack_require__(6);
 
 	var ReactUpdates = __webpack_require__(15);
-	var Transaction = __webpack_require__(152);
+	var Transaction = __webpack_require__(159);
 
 	var emptyFunction = __webpack_require__(12);
 
@@ -44980,9 +45397,9 @@ module.exports =
 
 	module.exports = ReactDefaultBatchingStrategy;
 
-/***/ },
-/* 335 */
-/***/ function(module, exports) {
+/***/ }),
+/* 307 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -45014,9 +45431,9 @@ module.exports =
 
 	module.exports = ReactEmptyComponent;
 
-/***/ },
-/* 336 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 308 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -45086,9 +45503,9 @@ module.exports =
 
 	module.exports = ReactHostComponent;
 
-/***/ },
-/* 337 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 309 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45102,11 +45519,11 @@ module.exports =
 
 	'use strict';
 
-	var ReactDOMSelection = __webpack_require__(500);
+	var ReactDOMSelection = __webpack_require__(478);
 
-	var containsNode = __webpack_require__(441);
-	var focusNode = __webpack_require__(193);
-	var getActiveElement = __webpack_require__(194);
+	var containsNode = __webpack_require__(417);
+	var focusNode = __webpack_require__(197);
+	var getActiveElement = __webpack_require__(198);
 
 	function isInDocument(node) {
 	  return containsNode(document.documentElement, node);
@@ -45119,7 +45536,6 @@ module.exports =
 	 * Input selection module for React.
 	 */
 	var ReactInputSelection = {
-
 	  hasSelectionCapabilities: function (elem) {
 	    var nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
 	    return nodeName && (nodeName === 'input' && elem.type === 'text' || nodeName === 'textarea' || elem.contentEditable === 'true');
@@ -45214,9 +45630,9 @@ module.exports =
 
 	module.exports = ReactInputSelection;
 
-/***/ },
-/* 338 */
-/***/ function(module, exports) {
+/***/ }),
+/* 310 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45235,9 +45651,9 @@ module.exports =
 
 	module.exports = ReactPropTypesSecret;
 
-/***/ },
-/* 339 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 311 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -45254,9 +45670,9 @@ module.exports =
 	var _assign = __webpack_require__(6);
 
 	var PooledClass = __webpack_require__(24);
-	var Transaction = __webpack_require__(152);
+	var Transaction = __webpack_require__(159);
 	var ReactInstrumentation = __webpack_require__(13);
-	var ReactServerUpdateQueue = __webpack_require__(523);
+	var ReactServerUpdateQueue = __webpack_require__(501);
 
 	/**
 	 * Executed within the scope of the `Transaction` instance. Consider these as
@@ -45329,9 +45745,9 @@ module.exports =
 
 	module.exports = ReactServerRenderingTransaction;
 
-/***/ },
-/* 340 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 312 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -45348,7 +45764,7 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5);
 
 	var ReactCurrentOwner = __webpack_require__(18);
-	var ReactInstanceMap = __webpack_require__(174);
+	var ReactInstanceMap = __webpack_require__(182);
 	var ReactInstrumentation = __webpack_require__(13);
 	var ReactUpdates = __webpack_require__(15);
 
@@ -45386,7 +45802,7 @@ module.exports =
 	  }
 
 	  if (true) {
-	     true ? warning(ReactCurrentOwner.current == null, '%s(...): Cannot update during an existing state transition (such as ' + 'within `render` or another component\'s constructor). Render methods ' + 'should be a pure function of props and state; constructor ' + 'side-effects are an anti-pattern, but can be moved to ' + '`componentWillMount`.', callerName) : void 0;
+	     true ? warning(ReactCurrentOwner.current == null, '%s(...): Cannot update during an existing state transition (such as ' + "within `render` or another component's constructor). Render methods " + 'should be a pure function of props and state; constructor ' + 'side-effects are an anti-pattern, but can be moved to ' + '`componentWillMount`.', callerName) : void 0;
 	  }
 
 	  return internalInstance;
@@ -45397,7 +45813,6 @@ module.exports =
 	 * reconciliation step.
 	 */
 	var ReactUpdateQueue = {
-
 	  /**
 	   * Checks whether or not this composite component is mounted.
 	   * @param {ReactClass} publicInstance The instance we want to test.
@@ -45503,7 +45918,7 @@ module.exports =
 	   * @param {object} completeState Next state.
 	   * @internal
 	   */
-	  enqueueReplaceState: function (publicInstance, completeState) {
+	  enqueueReplaceState: function (publicInstance, completeState, callback) {
 	    var internalInstance = getInternalInstanceReadyForUpdate(publicInstance, 'replaceState');
 
 	    if (!internalInstance) {
@@ -45512,6 +45927,16 @@ module.exports =
 
 	    internalInstance._pendingStateQueue = [completeState];
 	    internalInstance._pendingReplaceState = true;
+
+	    // Future-proof 15.5
+	    if (callback !== undefined && callback !== null) {
+	      ReactUpdateQueue.validateCallback(callback, 'replaceState');
+	      if (internalInstance._pendingCallbacks) {
+	        internalInstance._pendingCallbacks.push(callback);
+	      } else {
+	        internalInstance._pendingCallbacks = [callback];
+	      }
+	    }
 
 	    enqueueUpdate(internalInstance);
 	  },
@@ -45554,14 +45979,13 @@ module.exports =
 	  validateCallback: function (callback, callerName) {
 	    !(!callback || typeof callback === 'function') ?  true ? invariant(false, '%s(...): Expected the last optional `callback` argument to be a function. Instead received: %s.', callerName, formatUnexpectedArgument(callback)) : _prodInvariant('122', callerName, formatUnexpectedArgument(callback)) : void 0;
 	  }
-
 	};
 
 	module.exports = ReactUpdateQueue;
 
-/***/ },
-/* 341 */
-/***/ function(module, exports) {
+/***/ }),
+/* 313 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45576,7 +46000,6 @@ module.exports =
 	'use strict';
 
 	var ViewportMetrics = {
-
 	  currentScrollLeft: 0,
 
 	  currentScrollTop: 0,
@@ -45585,14 +46008,13 @@ module.exports =
 	    ViewportMetrics.currentScrollLeft = scrollPosition.x;
 	    ViewportMetrics.currentScrollTop = scrollPosition.y;
 	  }
-
 	};
 
 	module.exports = ViewportMetrics;
 
-/***/ },
-/* 342 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 314 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -45652,9 +46074,9 @@ module.exports =
 
 	module.exports = accumulateInto;
 
-/***/ },
-/* 343 */
-/***/ function(module, exports) {
+/***/ }),
+/* 315 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45687,9 +46109,9 @@ module.exports =
 
 	module.exports = forEachAccumulated;
 
-/***/ },
-/* 344 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 316 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45724,9 +46146,136 @@ module.exports =
 
 	module.exports = getTextContentAccessor;
 
-/***/ },
-/* 345 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 317 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var ReactDOMComponentTree = __webpack_require__(7);
+
+	function isCheckable(elem) {
+	  var type = elem.type;
+	  var nodeName = elem.nodeName;
+	  return nodeName && nodeName.toLowerCase() === 'input' && (type === 'checkbox' || type === 'radio');
+	}
+
+	function getTracker(inst) {
+	  return inst._wrapperState.valueTracker;
+	}
+
+	function attachTracker(inst, tracker) {
+	  inst._wrapperState.valueTracker = tracker;
+	}
+
+	function detachTracker(inst) {
+	  delete inst._wrapperState.valueTracker;
+	}
+
+	function getValueFromNode(node) {
+	  var value;
+	  if (node) {
+	    value = isCheckable(node) ? '' + node.checked : node.value;
+	  }
+	  return value;
+	}
+
+	var inputValueTracking = {
+	  // exposed for testing
+	  _getTrackerFromNode: function (node) {
+	    return getTracker(ReactDOMComponentTree.getInstanceFromNode(node));
+	  },
+
+
+	  track: function (inst) {
+	    if (getTracker(inst)) {
+	      return;
+	    }
+
+	    var node = ReactDOMComponentTree.getNodeFromInstance(inst);
+	    var valueField = isCheckable(node) ? 'checked' : 'value';
+	    var descriptor = Object.getOwnPropertyDescriptor(node.constructor.prototype, valueField);
+
+	    var currentValue = '' + node[valueField];
+
+	    // if someone has already defined a value or Safari, then bail
+	    // and don't track value will cause over reporting of changes,
+	    // but it's better then a hard failure
+	    // (needed for certain tests that spyOn input values and Safari)
+	    if (node.hasOwnProperty(valueField) || typeof descriptor.get !== 'function' || typeof descriptor.set !== 'function') {
+	      return;
+	    }
+
+	    Object.defineProperty(node, valueField, {
+	      enumerable: descriptor.enumerable,
+	      configurable: true,
+	      get: function () {
+	        return descriptor.get.call(this);
+	      },
+	      set: function (value) {
+	        currentValue = '' + value;
+	        descriptor.set.call(this, value);
+	      }
+	    });
+
+	    attachTracker(inst, {
+	      getValue: function () {
+	        return currentValue;
+	      },
+	      setValue: function (value) {
+	        currentValue = '' + value;
+	      },
+	      stopTracking: function () {
+	        detachTracker(inst);
+	        delete node[valueField];
+	      }
+	    });
+	  },
+
+	  updateValueIfChanged: function (inst) {
+	    if (!inst) {
+	      return false;
+	    }
+	    var tracker = getTracker(inst);
+
+	    if (!tracker) {
+	      inputValueTracking.track(inst);
+	      return true;
+	    }
+
+	    var lastValue = tracker.getValue();
+	    var nextValue = getValueFromNode(ReactDOMComponentTree.getNodeFromInstance(inst));
+
+	    if (nextValue !== lastValue) {
+	      tracker.setValue(nextValue);
+	      return true;
+	    }
+
+	    return false;
+	  },
+	  stopTracking: function (inst) {
+	    var tracker = getTracker(inst);
+	    if (tracker) {
+	      tracker.stopTracking();
+	    }
+	  }
+	};
+
+	module.exports = inputValueTracking;
+
+/***/ }),
+/* 318 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45743,11 +46292,11 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var ReactCompositeComponent = __webpack_require__(493);
-	var ReactEmptyComponent = __webpack_require__(335);
-	var ReactHostComponent = __webpack_require__(336);
+	var ReactCompositeComponent = __webpack_require__(471);
+	var ReactEmptyComponent = __webpack_require__(307);
+	var ReactHostComponent = __webpack_require__(308);
 
-	var getNextDebugID = __webpack_require__(544);
+	var getNextDebugID = __webpack_require__(557);
 	var invariant = __webpack_require__(3);
 	var warning = __webpack_require__(4);
 
@@ -45755,9 +46304,6 @@ module.exports =
 	var ReactCompositeComponentWrapper = function (element) {
 	  this.construct(element);
 	};
-	_assign(ReactCompositeComponentWrapper.prototype, ReactCompositeComponent, {
-	  _instantiateReactComponent: instantiateReactComponent
-	});
 
 	function getDeclarationErrorAddendum(owner) {
 	  if (owner) {
@@ -45800,7 +46346,7 @@ module.exports =
 	      var info = '';
 	      if (true) {
 	        if (type === undefined || typeof type === 'object' && type !== null && Object.keys(type).length === 0) {
-	          info += ' You likely forgot to export your component from the file ' + 'it\'s defined in.';
+	          info += ' You likely forgot to export your component from the file ' + "it's defined in.";
 	        }
 	      }
 	      info += getDeclarationErrorAddendum(element._owner);
@@ -45854,11 +46400,15 @@ module.exports =
 	  return instance;
 	}
 
+	_assign(ReactCompositeComponentWrapper.prototype, ReactCompositeComponent, {
+	  _instantiateReactComponent: instantiateReactComponent
+	});
+
 	module.exports = instantiateReactComponent;
 
-/***/ },
-/* 346 */
-/***/ function(module, exports) {
+/***/ }),
+/* 319 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45878,21 +46428,21 @@ module.exports =
 	 */
 
 	var supportedInputTypes = {
-	  'color': true,
-	  'date': true,
-	  'datetime': true,
+	  color: true,
+	  date: true,
+	  datetime: true,
 	  'datetime-local': true,
-	  'email': true,
-	  'month': true,
-	  'number': true,
-	  'password': true,
-	  'range': true,
-	  'search': true,
-	  'tel': true,
-	  'text': true,
-	  'time': true,
-	  'url': true,
-	  'week': true
+	  email: true,
+	  month: true,
+	  number: true,
+	  password: true,
+	  range: true,
+	  search: true,
+	  tel: true,
+	  text: true,
+	  time: true,
+	  url: true,
+	  week: true
 	};
 
 	function isTextInputElement(elem) {
@@ -45911,9 +46461,9 @@ module.exports =
 
 	module.exports = isTextInputElement;
 
-/***/ },
-/* 347 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 320 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -45928,8 +46478,8 @@ module.exports =
 	'use strict';
 
 	var ExecutionEnvironment = __webpack_require__(9);
-	var escapeTextContentForBrowser = __webpack_require__(153);
-	var setInnerHTML = __webpack_require__(180);
+	var escapeTextContentForBrowser = __webpack_require__(160);
+	var setInnerHTML = __webpack_require__(188);
 
 	/**
 	 * Set the textContent property of a node, ensuring that whitespace is preserved
@@ -45967,9 +46517,9 @@ module.exports =
 
 	module.exports = setTextContent;
 
-/***/ },
-/* 348 */
-/***/ function(module, exports) {
+/***/ }),
+/* 321 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -46013,9 +46563,9 @@ module.exports =
 
 	module.exports = shouldUpdateReactComponent;
 
-/***/ },
-/* 349 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 322 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -46032,11 +46582,11 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5);
 
 	var ReactCurrentOwner = __webpack_require__(18);
-	var REACT_ELEMENT_TYPE = __webpack_require__(507);
+	var REACT_ELEMENT_TYPE = __webpack_require__(485);
 
-	var getIteratorFn = __webpack_require__(543);
+	var getIteratorFn = __webpack_require__(521);
 	var invariant = __webpack_require__(3);
-	var KeyEscapeUtils = __webpack_require__(169);
+	var KeyEscapeUtils = __webpack_require__(177);
 	var warning = __webpack_require__(4);
 
 	var SEPARATOR = '.';
@@ -46150,7 +46700,7 @@ module.exports =
 	      if (true) {
 	        addendum = ' If you meant to render a collection of children, use an array ' + 'instead or wrap the object using createFragment(object) from the ' + 'React add-ons.';
 	        if (children._isReactElement) {
-	          addendum = ' It looks like you\'re using an element created by a different ' + 'version of React. Make sure to use only one copy of React.';
+	          addendum = " It looks like you're using an element created by a different " + 'version of React. Make sure to use only one copy of React.';
 	        }
 	        if (ReactCurrentOwner.current) {
 	          var name = ReactCurrentOwner.current.getName();
@@ -46193,9 +46743,9 @@ module.exports =
 
 	module.exports = traverseAllChildren;
 
-/***/ },
-/* 350 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 323 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -46215,7 +46765,7 @@ module.exports =
 
 	var _invariant2 = _interopRequireDefault(_invariant);
 
-	var _PropTypes = __webpack_require__(183);
+	var _PropTypes = __webpack_require__(191);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -46374,9 +46924,9 @@ module.exports =
 	exports.default = Link;
 	module.exports = exports['default'];
 
-/***/ },
-/* 351 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 324 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -46392,7 +46942,7 @@ module.exports =
 
 	var _RouteUtils = __webpack_require__(17);
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	var _InternalPropTypes = __webpack_require__(25);
 
@@ -46481,9 +47031,9 @@ module.exports =
 	exports.default = Redirect;
 	module.exports = exports['default'];
 
-/***/ },
-/* 352 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 325 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -46494,7 +47044,7 @@ module.exports =
 	exports.createRouterObject = createRouterObject;
 	exports.createRoutingHistory = createRoutingHistory;
 
-	var _deprecateObjectProperties = __webpack_require__(155);
+	var _deprecateObjectProperties = __webpack_require__(162);
 
 	var _deprecateObjectProperties2 = _interopRequireDefault(_deprecateObjectProperties);
 
@@ -46518,24 +47068,24 @@ module.exports =
 	  return history;
 	}
 
-/***/ },
-/* 353 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 326 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 	exports.default = createMemoryHistory;
 
-	var _useQueries = __webpack_require__(29);
+	var _useQueries = __webpack_require__(28);
 
 	var _useQueries2 = _interopRequireDefault(_useQueries);
 
-	var _useBasename = __webpack_require__(163);
+	var _useBasename = __webpack_require__(171);
 
 	var _useBasename2 = _interopRequireDefault(_useBasename);
 
-	var _createMemoryHistory = __webpack_require__(200);
+	var _createMemoryHistory = __webpack_require__(204);
 
 	var _createMemoryHistory2 = _interopRequireDefault(_createMemoryHistory);
 
@@ -46555,9 +47105,9 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 354 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 327 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -46569,7 +47119,7 @@ module.exports =
 	  return history;
 	};
 
-	var _useRouterHistory = __webpack_require__(356);
+	var _useRouterHistory = __webpack_require__(329);
 
 	var _useRouterHistory2 = _interopRequireDefault(_useRouterHistory);
 
@@ -46579,9 +47129,9 @@ module.exports =
 
 	module.exports = exports['default'];
 
-/***/ },
-/* 355 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 328 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -46591,7 +47141,7 @@ module.exports =
 
 	exports.default = makeStateWithLocation;
 
-	var _deprecateObjectProperties = __webpack_require__(155);
+	var _deprecateObjectProperties = __webpack_require__(162);
 
 	var _routerWarning = __webpack_require__(8);
 
@@ -46633,20 +47183,20 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 356 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 329 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 	exports.default = useRouterHistory;
 
-	var _useQueries = __webpack_require__(29);
+	var _useQueries = __webpack_require__(28);
 
 	var _useQueries2 = _interopRequireDefault(_useQueries);
 
-	var _useBasename = __webpack_require__(163);
+	var _useBasename = __webpack_require__(171);
 
 	var _useBasename2 = _interopRequireDefault(_useBasename);
 
@@ -46661,9 +47211,156 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 357 */
-/***/ function(module, exports) {
+/***/ }),
+/* 330 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var _prodInvariant = __webpack_require__(31),
+	    _assign = __webpack_require__(6);
+
+	var ReactNoopUpdateQueue = __webpack_require__(333);
+
+	var canDefineProperty = __webpack_require__(163);
+	var emptyObject = __webpack_require__(41);
+	var invariant = __webpack_require__(3);
+	var lowPriorityWarning = __webpack_require__(193);
+
+	/**
+	 * Base class helpers for the updating state of a component.
+	 */
+	function ReactComponent(props, context, updater) {
+	  this.props = props;
+	  this.context = context;
+	  this.refs = emptyObject;
+	  // We initialize the default updater but the real one gets injected by the
+	  // renderer.
+	  this.updater = updater || ReactNoopUpdateQueue;
+	}
+
+	ReactComponent.prototype.isReactComponent = {};
+
+	/**
+	 * Sets a subset of the state. Always use this to mutate
+	 * state. You should treat `this.state` as immutable.
+	 *
+	 * There is no guarantee that `this.state` will be immediately updated, so
+	 * accessing `this.state` after calling this method may return the old value.
+	 *
+	 * There is no guarantee that calls to `setState` will run synchronously,
+	 * as they may eventually be batched together.  You can provide an optional
+	 * callback that will be executed when the call to setState is actually
+	 * completed.
+	 *
+	 * When a function is provided to setState, it will be called at some point in
+	 * the future (not synchronously). It will be called with the up to date
+	 * component arguments (state, props, context). These values can be different
+	 * from this.* because your function may be called after receiveProps but before
+	 * shouldComponentUpdate, and this new state, props, and context will not yet be
+	 * assigned to this.
+	 *
+	 * @param {object|function} partialState Next partial state or function to
+	 *        produce next partial state to be merged with current state.
+	 * @param {?function} callback Called after state is updated.
+	 * @final
+	 * @protected
+	 */
+	ReactComponent.prototype.setState = function (partialState, callback) {
+	  !(typeof partialState === 'object' || typeof partialState === 'function' || partialState == null) ?  true ? invariant(false, 'setState(...): takes an object of state variables to update or a function which returns an object of state variables.') : _prodInvariant('85') : void 0;
+	  this.updater.enqueueSetState(this, partialState);
+	  if (callback) {
+	    this.updater.enqueueCallback(this, callback, 'setState');
+	  }
+	};
+
+	/**
+	 * Forces an update. This should only be invoked when it is known with
+	 * certainty that we are **not** in a DOM transaction.
+	 *
+	 * You may want to call this when you know that some deeper aspect of the
+	 * component's state has changed but `setState` was not called.
+	 *
+	 * This will not invoke `shouldComponentUpdate`, but it will invoke
+	 * `componentWillUpdate` and `componentDidUpdate`.
+	 *
+	 * @param {?function} callback Called after update is complete.
+	 * @final
+	 * @protected
+	 */
+	ReactComponent.prototype.forceUpdate = function (callback) {
+	  this.updater.enqueueForceUpdate(this);
+	  if (callback) {
+	    this.updater.enqueueCallback(this, callback, 'forceUpdate');
+	  }
+	};
+
+	/**
+	 * Deprecated APIs. These APIs used to exist on classic React classes but since
+	 * we would like to deprecate them, we're not going to move them over to this
+	 * modern base class. Instead, we define a getter that warns if it's accessed.
+	 */
+	if (true) {
+	  var deprecatedAPIs = {
+	    isMounted: ['isMounted', 'Instead, make sure to clean up subscriptions and pending requests in ' + 'componentWillUnmount to prevent memory leaks.'],
+	    replaceState: ['replaceState', 'Refactor your code to use setState instead (see ' + 'https://github.com/facebook/react/issues/3236).']
+	  };
+	  var defineDeprecationWarning = function (methodName, info) {
+	    if (canDefineProperty) {
+	      Object.defineProperty(ReactComponent.prototype, methodName, {
+	        get: function () {
+	          lowPriorityWarning(false, '%s(...) is deprecated in plain JavaScript React classes. %s', info[0], info[1]);
+	          return undefined;
+	        }
+	      });
+	    }
+	  };
+	  for (var fnName in deprecatedAPIs) {
+	    if (deprecatedAPIs.hasOwnProperty(fnName)) {
+	      defineDeprecationWarning(fnName, deprecatedAPIs[fnName]);
+	    }
+	  }
+	}
+
+	/**
+	 * Base class helpers for the updating state of a component.
+	 */
+	function ReactPureComponent(props, context, updater) {
+	  // Duplicated from ReactComponent.
+	  this.props = props;
+	  this.context = context;
+	  this.refs = emptyObject;
+	  // We initialize the default updater but the real one gets injected by the
+	  // renderer.
+	  this.updater = updater || ReactNoopUpdateQueue;
+	}
+
+	function ComponentDummy() {}
+	ComponentDummy.prototype = ReactComponent.prototype;
+	ReactPureComponent.prototype = new ComponentDummy();
+	ReactPureComponent.prototype.constructor = ReactPureComponent;
+	// Avoid an extra prototype jump for these methods.
+	_assign(ReactPureComponent.prototype, ReactComponent.prototype);
+	ReactPureComponent.prototype.isPureReactComponent = true;
+
+	module.exports = {
+	  Component: ReactComponent,
+	  PureComponent: ReactPureComponent
+	};
+
+/***/ }),
+/* 331 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -46685,9 +47382,9 @@ module.exports =
 
 	module.exports = REACT_ELEMENT_TYPE;
 
-/***/ },
-/* 358 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 332 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -46712,11 +47409,12 @@ module.exports =
 	var ReactComponentTreeHook = __webpack_require__(14);
 	var ReactElement = __webpack_require__(26);
 
-	var checkReactTypeSpec = __webpack_require__(578);
+	var checkReactTypeSpec = __webpack_require__(555);
 
-	var canDefineProperty = __webpack_require__(188);
-	var getIteratorFn = __webpack_require__(189);
+	var canDefineProperty = __webpack_require__(163);
+	var getIteratorFn = __webpack_require__(334);
 	var warning = __webpack_require__(4);
+	var lowPriorityWarning = __webpack_require__(193);
 
 	function getDeclarationErrorAddendum() {
 	  if (ReactCurrentOwner.current) {
@@ -46724,6 +47422,16 @@ module.exports =
 	    if (name) {
 	      return ' Check the render method of `' + name + '`.';
 	    }
+	  }
+	  return '';
+	}
+
+	function getSourceInfoErrorAddendum(elementProps) {
+	  if (elementProps !== null && elementProps !== undefined && elementProps.__source !== undefined) {
+	    var source = elementProps.__source;
+	    var fileName = source.fileName.replace(/^.*[\\\/]/, '');
+	    var lineNumber = source.lineNumber;
+	    return ' Check your code at ' + fileName + ':' + lineNumber + '.';
 	  }
 	  return '';
 	}
@@ -46847,7 +47555,6 @@ module.exports =
 	}
 
 	var ReactElementValidator = {
-
 	  createElement: function (type, props, children) {
 	    var validType = typeof type === 'string' || typeof type === 'function';
 	    // We warn in this case but don't throw. We expect the element creation to
@@ -46856,10 +47563,22 @@ module.exports =
 	      if (typeof type !== 'function' && typeof type !== 'string') {
 	        var info = '';
 	        if (type === undefined || typeof type === 'object' && type !== null && Object.keys(type).length === 0) {
-	          info += ' You likely forgot to export your component from the file ' + 'it\'s defined in.';
+	          info += ' You likely forgot to export your component from the file ' + "it's defined in.";
 	        }
-	        info += getDeclarationErrorAddendum();
+
+	        var sourceInfo = getSourceInfoErrorAddendum(props);
+	        if (sourceInfo) {
+	          info += sourceInfo;
+	        } else {
+	          info += getDeclarationErrorAddendum();
+	        }
+
+	        info += ReactComponentTreeHook.getCurrentStackAddendum();
+
+	        var currentSource = props !== null && props !== undefined && props.__source !== undefined ? props.__source : null;
+	        ReactComponentTreeHook.pushNonStandardWarningStack(true, currentSource);
 	         true ? warning(false, 'React.createElement: type is invalid -- expected a string (for ' + 'built-in components) or a class/function (for composite ' + 'components) but got: %s.%s', type == null ? type : typeof type, info) : void 0;
+	        ReactComponentTreeHook.popNonStandardWarningStack();
 	      }
 	    }
 
@@ -46897,7 +47616,7 @@ module.exports =
 	        Object.defineProperty(validatedFactory, 'type', {
 	          enumerable: false,
 	          get: function () {
-	             true ? warning(false, 'Factory.type is deprecated. Access the class directly ' + 'before passing it to createFactory.') : void 0;
+	            lowPriorityWarning(false, 'Factory.type is deprecated. Access the class directly ' + 'before passing it to createFactory.');
 	            Object.defineProperty(this, 'type', {
 	              value: type
 	            });
@@ -46918,16 +47637,157 @@ module.exports =
 	    validatePropTypes(newElement);
 	    return newElement;
 	  }
-
 	};
 
 	module.exports = ReactElementValidator;
 
-/***/ },
-/* 359 */
-338,
-/* 360 */
-/***/ function(module, exports) {
+/***/ }),
+/* 333 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2015-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var warning = __webpack_require__(4);
+
+	function warnNoop(publicInstance, callerName) {
+	  if (true) {
+	    var constructor = publicInstance.constructor;
+	     true ? warning(false, '%s(...): Can only update a mounted or mounting component. ' + 'This usually means you called %s() on an unmounted component. ' + 'This is a no-op. Please check the code for the %s component.', callerName, callerName, constructor && (constructor.displayName || constructor.name) || 'ReactClass') : void 0;
+	  }
+	}
+
+	/**
+	 * This is the abstract API for an update queue.
+	 */
+	var ReactNoopUpdateQueue = {
+	  /**
+	   * Checks whether or not this composite component is mounted.
+	   * @param {ReactClass} publicInstance The instance we want to test.
+	   * @return {boolean} True if mounted, false otherwise.
+	   * @protected
+	   * @final
+	   */
+	  isMounted: function (publicInstance) {
+	    return false;
+	  },
+
+	  /**
+	   * Enqueue a callback that will be executed after all the pending updates
+	   * have processed.
+	   *
+	   * @param {ReactClass} publicInstance The instance to use as `this` context.
+	   * @param {?function} callback Called after state is updated.
+	   * @internal
+	   */
+	  enqueueCallback: function (publicInstance, callback) {},
+
+	  /**
+	   * Forces an update. This should only be invoked when it is known with
+	   * certainty that we are **not** in a DOM transaction.
+	   *
+	   * You may want to call this when you know that some deeper aspect of the
+	   * component's state has changed but `setState` was not called.
+	   *
+	   * This will not invoke `shouldComponentUpdate`, but it will invoke
+	   * `componentWillUpdate` and `componentDidUpdate`.
+	   *
+	   * @param {ReactClass} publicInstance The instance that should rerender.
+	   * @internal
+	   */
+	  enqueueForceUpdate: function (publicInstance) {
+	    warnNoop(publicInstance, 'forceUpdate');
+	  },
+
+	  /**
+	   * Replaces all of the state. Always use this or `setState` to mutate state.
+	   * You should treat `this.state` as immutable.
+	   *
+	   * There is no guarantee that `this.state` will be immediately updated, so
+	   * accessing `this.state` after calling this method may return the old value.
+	   *
+	   * @param {ReactClass} publicInstance The instance that should rerender.
+	   * @param {object} completeState Next state.
+	   * @internal
+	   */
+	  enqueueReplaceState: function (publicInstance, completeState) {
+	    warnNoop(publicInstance, 'replaceState');
+	  },
+
+	  /**
+	   * Sets a subset of the state. This only exists because _pendingState is
+	   * internal. This provides a merging strategy that is not available to deep
+	   * properties which is confusing. TODO: Expose pendingState or don't use it
+	   * during the merge.
+	   *
+	   * @param {ReactClass} publicInstance The instance that should rerender.
+	   * @param {object} partialState Next partial state to be merged with state.
+	   * @internal
+	   */
+	  enqueueSetState: function (publicInstance, partialState) {
+	    warnNoop(publicInstance, 'setState');
+	  }
+	};
+
+	module.exports = ReactNoopUpdateQueue;
+
+/***/ }),
+/* 334 */
+/***/ (function(module, exports) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * 
+	 */
+
+	'use strict';
+
+	/* global Symbol */
+
+	var ITERATOR_SYMBOL = typeof Symbol === 'function' && Symbol.iterator;
+	var FAUX_ITERATOR_SYMBOL = '@@iterator'; // Before Symbol spec.
+
+	/**
+	 * Returns the iterator method function contained on the iterable object.
+	 *
+	 * Be sure to invoke the function with the iterable as context:
+	 *
+	 *     var iteratorFn = getIteratorFn(myIterable);
+	 *     if (iteratorFn) {
+	 *       var iterator = iteratorFn.call(myIterable);
+	 *       ...
+	 *     }
+	 *
+	 * @param {?object} maybeIterable
+	 * @return {?function}
+	 */
+	function getIteratorFn(maybeIterable) {
+	  var iteratorFn = maybeIterable && (ITERATOR_SYMBOL && maybeIterable[ITERATOR_SYMBOL] || maybeIterable[FAUX_ITERATOR_SYMBOL]);
+	  if (typeof iteratorFn === 'function') {
+	    return iteratorFn;
+	  }
+	}
+
+	module.exports = getIteratorFn;
+
+/***/ }),
+/* 335 */
+/***/ (function(module, exports) {
 
 	module.exports = function(module) {
 		if(!module.webpackPolyfill) {
@@ -46941,21 +47801,21 @@ module.exports =
 	}
 
 
-/***/ },
-/* 361 */
-/***/ function(module, exports) {
+/***/ }),
+/* 336 */
+/***/ (function(module, exports) {
 
 	module.exports = require("path");
 
-/***/ },
-/* 362 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 337 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(__dirname) {var _ = __webpack_require__(23);
-	var path = __webpack_require__(361);
-	var prevnextPlugin = __webpack_require__(387);
-	var markdown = __webpack_require__(584);
-	var highlight = __webpack_require__(583);
+	var path = __webpack_require__(336);
+	var prevnextPlugin = __webpack_require__(362);
+	var markdown = __webpack_require__(563);
+	var highlight = __webpack_require__(562);
 
 	module.exports = {
 	  template: {
@@ -46978,69 +47838,69 @@ module.exports =
 	    prevnextPlugin()
 	  ],
 	  layout: function() {
-	    return __webpack_require__(402).default
+	    return __webpack_require__(377).default
 	  },
 	  paths: {
 	    '/': root(
 	      function() {
-	        return __webpack_require__(363);
+	        return __webpack_require__(338);
 	      }
 	    ),
 
 	    'get-started': section(
 	      'Get-Started',
 	      function() {
-	        return __webpack_require__(368)
+	        return __webpack_require__(343)
 	      }
 	    ),
 
 	    concepts: section(
 	      'Concepts',
 	      function() {
-	        return __webpack_require__(365);
+	        return __webpack_require__(340);
 	      }
 	    ),
 
 	    guides: section(
 	      'Guides',
 	      function() {
-	        return __webpack_require__(369);
+	        return __webpack_require__(344);
 	      }
 	    ),
 
 	    development: section(
 	      'Development',
 	      function() {
-	        return __webpack_require__(367);
+	        return __webpack_require__(342);
 	      }
 	    ),
 
 	    configuration: section(
 	      'Configuration',
 	      function() {
-	        return __webpack_require__(366);
+	        return __webpack_require__(341);
 	      }
 	    ),
 
 	    api: section(
 	      'API',
 	      function() {
-	        return __webpack_require__(364);
+	        return __webpack_require__(339);
 	      }
 	    ),
 
 	    pluginsapi: section(
 	      'Plugins API',
 	      function() {
-	        return __webpack_require__(372);
+	        return __webpack_require__(347);
 	      }
 	    ),
 
 	    loaders: section(
 	      'Loaders',
 	      function() {
-	        const content = __webpack_require__(370);
-	        const generated = __webpack_require__(373);
+	        const content = __webpack_require__(345);
+	        const generated = __webpack_require__(348);
 	        return combineContexts(content, generated);
 	      }
 	    ),
@@ -47048,33 +47908,33 @@ module.exports =
 	    plugins: section(
 	      'Plugins',
 	      function() {
-	        const content = __webpack_require__(371);
-	        const generated = __webpack_require__(374);
+	        const content = __webpack_require__(346);
+	        const generated = __webpack_require__(349);
 	        return combineContexts(content, generated);
 	      }
 	    ),
 
 	    vote: {
 	      path() {
-	        return __webpack_require__(159).default
+	        return __webpack_require__(167).default
 	      }
 	    },
 
 	    'vote/feedback': {
 	      path() {
-	        return __webpack_require__(159).default
+	        return __webpack_require__(167).default
 	      }
 	    },
 
 	    'vote/moneyDistribution': {
 	      path() {
-	        return __webpack_require__(159).default
+	        return __webpack_require__(167).default
 	      }
 	    },
 
 	    organization: {
 	      path() {
-	        return __webpack_require__(397).default
+	        return __webpack_require__(372).default
 	      }
 	    }
 	  }
@@ -47089,10 +47949,10 @@ module.exports =
 	    processPage: processPage(), // Process individual page (url, content)
 	    layouts: { // Layouts (page/section)
 	      index: function() {
-	        return __webpack_require__(404).default
+	        return __webpack_require__(379).default
 	      },
 	      page: function() {
-	        return __webpack_require__(158).default
+	        return __webpack_require__(166).default
 	      }
 	    },
 	    redirects: {} // Redirects <from>: <to>
@@ -47111,10 +47971,10 @@ module.exports =
 	    processPage: processPage(),
 	    layouts: {
 	      index: function() {
-	        return __webpack_require__(158).default
+	        return __webpack_require__(166).default
 	      },
 	      page: function() {
-	        return __webpack_require__(158).default
+	        return __webpack_require__(166).default
 	      }
 	    },
 	    redirects: {} // <from>: <to>
@@ -47156,17 +48016,17 @@ module.exports =
 
 	/* WEBPACK VAR INJECTION */}.call(exports, "/"))
 
-/***/ },
-/* 363 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 338 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./analyze.md": 202,
-		"./branding.md": 208,
-		"./contribute.md": 237,
-		"./index.md": 268,
-		"./license.md": 269,
-		"./writers-guide.md": 289
+		"./analyze.md": 206,
+		"./branding.md": 212,
+		"./contribute.md": 241,
+		"./index.md": 272,
+		"./license.md": 273,
+		"./writers-guide.md": 293
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47179,19 +48039,19 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 363;
+	webpackContext.id = 338;
 
 
-/***/ },
-/* 364 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 339 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./cli.md": 203,
-		"./index.md": 204,
-		"./loaders.md": 205,
-		"./node.md": 206,
-		"./plugins.md": 207
+		"./cli.md": 207,
+		"./index.md": 208,
+		"./loaders.md": 209,
+		"./node.md": 210,
+		"./plugins.md": 211
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47204,25 +48064,25 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 364;
+	webpackContext.id = 339;
 
 
-/***/ },
-/* 365 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 340 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./configuration.md": 209,
-		"./dependency-graph.md": 210,
-		"./entry-points.md": 211,
-		"./hot-module-replacement.md": 212,
-		"./index.md": 213,
-		"./loaders.md": 214,
-		"./module-resolution.md": 215,
-		"./modules.md": 216,
-		"./output.md": 217,
-		"./plugins.md": 218,
-		"./targets.md": 219
+		"./configuration.md": 213,
+		"./dependency-graph.md": 214,
+		"./entry-points.md": 215,
+		"./hot-module-replacement.md": 216,
+		"./index.md": 217,
+		"./loaders.md": 218,
+		"./module-resolution.md": 219,
+		"./modules.md": 220,
+		"./output.md": 221,
+		"./plugins.md": 222,
+		"./targets.md": 223
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47235,31 +48095,31 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 365;
+	webpackContext.id = 340;
 
 
-/***/ },
-/* 366 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 341 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./dev-server.md": 220,
-		"./devtool.md": 221,
-		"./entry-context.md": 222,
-		"./external-configs.md": 223,
-		"./externals.md": 224,
-		"./index.md": 225,
-		"./module.md": 226,
-		"./node.md": 227,
-		"./other-options.md": 228,
-		"./output.md": 229,
-		"./passing-a-config.md": 230,
-		"./performance.md": 231,
-		"./plugins.md": 232,
-		"./resolve.md": 233,
-		"./stats.md": 234,
-		"./target.md": 235,
-		"./watch.md": 236
+		"./dev-server.md": 224,
+		"./devtool.md": 225,
+		"./entry-context.md": 226,
+		"./external-configs.md": 227,
+		"./externals.md": 228,
+		"./index.md": 229,
+		"./module.md": 230,
+		"./node.md": 231,
+		"./other-options.md": 232,
+		"./output.md": 233,
+		"./passing-a-config.md": 234,
+		"./performance.md": 235,
+		"./plugins.md": 236,
+		"./resolve.md": 237,
+		"./stats.md": 238,
+		"./target.md": 239,
+		"./watch.md": 240
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47272,19 +48132,19 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 366;
+	webpackContext.id = 341;
 
 
-/***/ },
-/* 367 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 342 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./how-to-write-a-loader.md": 238,
-		"./how-to-write-a-plugin.md": 239,
-		"./index.md": 240,
-		"./plugin-patterns.md": 241,
-		"./release-process.md": 242
+		"./how-to-write-a-loader.md": 242,
+		"./how-to-write-a-plugin.md": 243,
+		"./index.md": 244,
+		"./plugin-patterns.md": 245,
+		"./release-process.md": 246
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47297,17 +48157,17 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 367;
+	webpackContext.id = 342;
 
 
-/***/ },
-/* 368 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 343 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./index.md": 243,
-		"./install-webpack.md": 244,
-		"./why-webpack.md": 245
+		"./index.md": 247,
+		"./install-webpack.md": 248,
+		"./why-webpack.md": 249
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47320,36 +48180,36 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 368;
+	webpackContext.id = 343;
 
 
-/***/ },
-/* 369 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 344 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./author-libraries.md": 246,
-		"./build-performance.md": 247,
-		"./caching.md": 248,
-		"./code-splitting-css.md": 249,
-		"./code-splitting-libraries.md": 250,
-		"./code-splitting-require.md": 251,
-		"./code-splitting.md": 252,
-		"./compatibility.md": 253,
-		"./dependency-management.md": 254,
-		"./development-docker.md": 255,
-		"./development-third-party.md": 256,
-		"./development-vagrant.md": 257,
-		"./development.md": 258,
-		"./hmr-react.md": 259,
-		"./index.md": 260,
-		"./installation.md": 261,
-		"./lazy-load-react.md": 262,
-		"./migrating.md": 263,
-		"./production-build.md": 264,
-		"./public-path.md": 265,
-		"./shimming.md": 266,
-		"./webpack-and-typescript.md": 267
+		"./author-libraries.md": 250,
+		"./build-performance.md": 251,
+		"./caching.md": 252,
+		"./code-splitting-css.md": 253,
+		"./code-splitting-libraries.md": 254,
+		"./code-splitting-require.md": 255,
+		"./code-splitting.md": 256,
+		"./compatibility.md": 257,
+		"./dependency-management.md": 258,
+		"./development-docker.md": 259,
+		"./development-third-party.md": 260,
+		"./development-vagrant.md": 261,
+		"./development.md": 262,
+		"./hmr-react.md": 263,
+		"./index.md": 264,
+		"./installation.md": 265,
+		"./lazy-load-react.md": 266,
+		"./migrating.md": 267,
+		"./production-build.md": 268,
+		"./public-path.md": 269,
+		"./shimming.md": 270,
+		"./webpack-and-typescript.md": 271
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47362,15 +48222,15 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 369;
+	webpackContext.id = 344;
 
 
-/***/ },
-/* 370 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 345 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./index.md": 270
+		"./index.md": 274
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47383,22 +48243,22 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 370;
+	webpackContext.id = 345;
 
 
-/***/ },
-/* 371 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 346 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./commons-chunk-plugin.md": 271,
-		"./define-plugin.md": 272,
-		"./environment-plugin.md": 273,
-		"./html-webpack-plugin.md": 274,
-		"./index.md": 275,
-		"./loader-options-plugin.md": 276,
-		"./provide-plugin.md": 277,
-		"./source-map-dev-tool-plugin.md": 278
+		"./commons-chunk-plugin.md": 275,
+		"./define-plugin.md": 276,
+		"./environment-plugin.md": 277,
+		"./html-webpack-plugin.md": 278,
+		"./index.md": 279,
+		"./loader-options-plugin.md": 280,
+		"./provide-plugin.md": 281,
+		"./source-map-dev-tool-plugin.md": 282
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47411,24 +48271,24 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 371;
+	webpackContext.id = 346;
 
 
-/***/ },
-/* 372 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 347 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
-		"./compilation.md": 279,
-		"./compiler.md": 280,
-		"./dependency.md": 281,
-		"./examples.md": 282,
-		"./index.md": 283,
-		"./module-factories.md": 284,
-		"./parser.md": 285,
-		"./resolver.md": 286,
-		"./tapable.md": 287,
-		"./template.md": 288
+		"./compilation.md": 283,
+		"./compiler.md": 284,
+		"./dependency.md": 285,
+		"./examples.md": 286,
+		"./index.md": 287,
+		"./module-factories.md": 288,
+		"./parser.md": 289,
+		"./resolver.md": 290,
+		"./tapable.md": 291,
+		"./template.md": 292
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -47441,86 +48301,38 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 372;
+	webpackContext.id = 347;
 
 
-/***/ },
-/* 373 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 348 */
+/***/ (function(module, exports) {
 
-	var map = {
-		"./bundle-loader.md": 290,
-		"./coffee-loader.md": 291,
-		"./coffee-redux-loader.md": 292,
-		"./coverjs-loader.md": 293,
-		"./css-loader.md": 294,
-		"./exports-loader.md": 295,
-		"./expose-loader.md": 296,
-		"./file-loader.md": 297,
-		"./html-loader.md": 298,
-		"./i18n-loader.md": 299,
-		"./imports-loader.md": 300,
-		"./jshint-loader.md": 301,
-		"./json-loader.md": 302,
-		"./json5-loader.md": 303,
-		"./less-loader.md": 304,
-		"./mocha-loader.md": 305,
-		"./multi-loader.md": 306,
-		"./node-loader.md": 307,
-		"./null-loader.md": 308,
-		"./raw-loader.md": 309,
-		"./react-proxy-loader.md": 310,
-		"./script-loader.md": 311,
-		"./source-map-loader.md": 312,
-		"./style-loader.md": 313,
-		"./transform-loader.md": 314,
-		"./url-loader.md": 315,
-		"./val-loader.md": 316,
-		"./worker-loader.md": 317
-	};
 	function webpackContext(req) {
-		return __webpack_require__(webpackContextResolve(req));
-	};
-	function webpackContextResolve(req) {
-		return map[req] || (function() { throw new Error("Cannot find module '" + req + "'.") }());
-	};
-	webpackContext.keys = function webpackContextKeys() {
-		return Object.keys(map);
-	};
-	webpackContext.resolve = webpackContextResolve;
+		throw new Error("Cannot find module '" + req + "'.");
+	}
+	webpackContext.keys = function() { return []; };
+	webpackContext.resolve = webpackContext;
 	module.exports = webpackContext;
-	webpackContext.id = 373;
+	webpackContext.id = 348;
 
 
-/***/ },
-/* 374 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 349 */
+/***/ (function(module, exports) {
 
-	var map = {
-		"./component-webpack-plugin.md": 318,
-		"./compression-webpack-plugin.md": 319,
-		"./extract-text-webpack-plugin.md": 320,
-		"./i18n-webpack-plugin.md": 321,
-		"./npm-install-webpack-plugin.md": 322,
-		"./uglifyjs-webpack-plugin.md": 323
-	};
 	function webpackContext(req) {
-		return __webpack_require__(webpackContextResolve(req));
-	};
-	function webpackContextResolve(req) {
-		return map[req] || (function() { throw new Error("Cannot find module '" + req + "'.") }());
-	};
-	webpackContext.keys = function webpackContextKeys() {
-		return Object.keys(map);
-	};
-	webpackContext.resolve = webpackContextResolve;
+		throw new Error("Cannot find module '" + req + "'.");
+	}
+	webpackContext.keys = function() { return []; };
+	webpackContext.resolve = webpackContext;
 	module.exports = webpackContext;
-	webpackContext.id = 374;
+	webpackContext.id = 349;
 
 
-/***/ },
-/* 375 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 350 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
@@ -47545,9 +48357,9 @@ module.exports =
 	}; // this expects <div id="disqus_thread" /> to exist as it will render there
 	exports.default = Disqus;
 
-/***/ },
-/* 376 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 351 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47584,9 +48396,9 @@ module.exports =
 	}; // https://sidecar.gitter.im/
 	exports.default = Gitter;
 
-/***/ },
-/* 377 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 352 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47619,9 +48431,9 @@ module.exports =
 
 	exports.default = GoogleAnalytics;
 
-/***/ },
-/* 378 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 353 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47645,9 +48457,9 @@ module.exports =
 
 	exports.default = Markdown;
 
-/***/ },
-/* 379 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 354 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47679,9 +48491,9 @@ module.exports =
 
 	exports.default = Moment;
 
-/***/ },
-/* 380 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 355 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47693,7 +48505,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _reactRouter = __webpack_require__(40);
+	var _reactRouter = __webpack_require__(39);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -47724,9 +48536,9 @@ module.exports =
 
 	exports.default = Navigation;
 
-/***/ },
-/* 381 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 356 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47805,9 +48617,9 @@ module.exports =
 
 	exports.default = PrevNext;
 
-/***/ },
-/* 382 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 357 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47819,7 +48631,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _reactRouter = __webpack_require__(40);
+	var _reactRouter = __webpack_require__(39);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -47851,9 +48663,9 @@ module.exports =
 
 	exports.default = PrevNextMini;
 
-/***/ },
-/* 383 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 358 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47900,9 +48712,9 @@ module.exports =
 
 	exports.default = Teaser;
 
-/***/ },
-/* 384 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 359 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47914,7 +48726,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _reactRouter = __webpack_require__(40);
+	var _reactRouter = __webpack_require__(39);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -47946,9 +48758,9 @@ module.exports =
 
 	exports.default = Toc;
 
-/***/ },
-/* 385 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 360 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -47956,7 +48768,7 @@ module.exports =
 	  value: true
 	});
 
-	var _Disqus = __webpack_require__(375);
+	var _Disqus = __webpack_require__(350);
 
 	Object.defineProperty(exports, 'Disqus', {
 	  enumerable: true,
@@ -47965,7 +48777,7 @@ module.exports =
 	  }
 	});
 
-	var _Gitter = __webpack_require__(376);
+	var _Gitter = __webpack_require__(351);
 
 	Object.defineProperty(exports, 'Gitter', {
 	  enumerable: true,
@@ -47974,7 +48786,7 @@ module.exports =
 	  }
 	});
 
-	var _GoogleAnalytics = __webpack_require__(377);
+	var _GoogleAnalytics = __webpack_require__(352);
 
 	Object.defineProperty(exports, 'GoogleAnalytics', {
 	  enumerable: true,
@@ -47983,7 +48795,7 @@ module.exports =
 	  }
 	});
 
-	var _Navigation = __webpack_require__(380);
+	var _Navigation = __webpack_require__(355);
 
 	Object.defineProperty(exports, 'Navigation', {
 	  enumerable: true,
@@ -47992,7 +48804,7 @@ module.exports =
 	  }
 	});
 
-	var _Markdown = __webpack_require__(378);
+	var _Markdown = __webpack_require__(353);
 
 	Object.defineProperty(exports, 'Markdown', {
 	  enumerable: true,
@@ -48001,7 +48813,7 @@ module.exports =
 	  }
 	});
 
-	var _Moment = __webpack_require__(379);
+	var _Moment = __webpack_require__(354);
 
 	Object.defineProperty(exports, 'Moment', {
 	  enumerable: true,
@@ -48010,7 +48822,7 @@ module.exports =
 	  }
 	});
 
-	var _PrevNext = __webpack_require__(381);
+	var _PrevNext = __webpack_require__(356);
 
 	Object.defineProperty(exports, 'PrevNext', {
 	  enumerable: true,
@@ -48019,7 +48831,7 @@ module.exports =
 	  }
 	});
 
-	var _PrevNextMini = __webpack_require__(382);
+	var _PrevNextMini = __webpack_require__(357);
 
 	Object.defineProperty(exports, 'PrevNextMini', {
 	  enumerable: true,
@@ -48028,7 +48840,7 @@ module.exports =
 	  }
 	});
 
-	var _Teaser = __webpack_require__(383);
+	var _Teaser = __webpack_require__(358);
 
 	Object.defineProperty(exports, 'Teaser', {
 	  enumerable: true,
@@ -48037,7 +48849,7 @@ module.exports =
 	  }
 	});
 
-	var _Toc = __webpack_require__(384);
+	var _Toc = __webpack_require__(359);
 
 	Object.defineProperty(exports, 'Toc', {
 	  enumerable: true,
@@ -48048,9 +48860,9 @@ module.exports =
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-/***/ },
-/* 386 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 361 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
@@ -48096,9 +48908,9 @@ module.exports =
 
 	exports.default = Interactive;
 
-/***/ },
-/* 387 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 362 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	const _ = __webpack_require__(23);
 
@@ -48189,17 +49001,17 @@ module.exports =
 	function id(a) { return a; }
 
 
-/***/ },
-/* 388 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 363 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	var React = __webpack_require__(2);
-	var ReactDOMServer = __webpack_require__(548);
-	var Router = __webpack_require__(40);
-	var History = __webpack_require__(460);
-	var Routes = __webpack_require__(390);
+	var ReactDOMServer = __webpack_require__(525);
+	var Router = __webpack_require__(39);
+	var History = __webpack_require__(436);
+	var Routes = __webpack_require__(365);
 
 	module.exports = function (url, cb) {
 	  var history = History.createMemoryHistory();
@@ -48221,9 +49033,9 @@ module.exports =
 	  });
 	};
 
-/***/ },
-/* 389 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 364 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48235,7 +49047,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _config = __webpack_require__(156);
+	var _config = __webpack_require__(164);
 
 	var _config2 = _interopRequireDefault(_config);
 
@@ -48243,7 +49055,7 @@ module.exports =
 
 	var _lodash2 = _interopRequireDefault(_lodash);
 
-	var _paths = __webpack_require__(157);
+	var _paths = __webpack_require__(165);
 
 	var _paths2 = _interopRequireDefault(_paths);
 
@@ -48326,9 +49138,9 @@ module.exports =
 
 	exports.default = BodyContent;
 
-/***/ },
-/* 390 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 365 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48340,17 +49152,17 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _reactRouter = __webpack_require__(40);
+	var _reactRouter = __webpack_require__(39);
 
-	var _config = __webpack_require__(156);
+	var _config = __webpack_require__(164);
 
 	var _config2 = _interopRequireDefault(_config);
 
-	var _BodyContent = __webpack_require__(389);
+	var _BodyContent = __webpack_require__(364);
 
 	var _BodyContent2 = _interopRequireDefault(_BodyContent);
 
-	var _paths = __webpack_require__(157);
+	var _paths = __webpack_require__(165);
 
 	var _paths2 = _interopRequireDefault(_paths);
 
@@ -48371,9 +49183,9 @@ module.exports =
 	  )
 	);
 
-/***/ },
-/* 391 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 366 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48424,9 +49236,9 @@ module.exports =
 	  }
 	};
 
-/***/ },
-/* 392 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 367 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48442,7 +49254,7 @@ module.exports =
 
 	var _link2 = _interopRequireDefault(_link);
 
-	__webpack_require__(416);
+	__webpack_require__(392);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -48459,9 +49271,9 @@ module.exports =
 
 	exports.default = CC;
 
-/***/ },
-/* 393 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 368 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48583,27 +49395,25 @@ module.exports =
 	        this.container.addEventListener('mouseenter', this.listeners.spin);
 	        this.container.addEventListener('mouseleave', this.listeners.reset);
 	      } else if (continuous) {
-	        (function () {
-	          var degrees = 0;
-	          var axis = 'y';
+	        var degrees = 0;
+	        var axis = 'y';
 
-	          var lastTime = performance.now();
-	          var animation = function animation() {
-	            var nowTime = performance.now();
-	            var deltaTime = nowTime - lastTime;
+	        var lastTime = performance.now();
+	        var animation = function animation() {
+	          var nowTime = performance.now();
+	          var deltaTime = nowTime - lastTime;
 
-	            if (repeatDelay <= deltaTime) {
-	              var obj = {};
-	              obj[axis] = degrees += 90;
+	          if (repeatDelay <= deltaTime) {
+	            var obj = {};
+	            obj[axis] = degrees += 90;
 
-	              _this3.setState(_extends({}, obj, { iteration: (_this3.state.iteration + 1) % 4 }));
-	              lastTime = performance.now();
-	            }
+	            _this3.setState(_extends({}, obj, { iteration: (_this3.state.iteration + 1) % 4 }));
+	            lastTime = performance.now();
+	          }
 
-	            _this3._requestAnimation = requestAnimationFrame(animation);
-	          };
-	          animation();
-	        })();
+	          _this3._requestAnimation = requestAnimationFrame(animation);
+	        };
+	        animation();
 	      }
 	    }
 	  }, {
@@ -48764,9 +49574,9 @@ module.exports =
 	  repeatDelay: 1000
 	};
 
-/***/ },
-/* 394 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 369 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48778,7 +49588,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _cc = __webpack_require__(392);
+	var _cc = __webpack_require__(367);
 
 	var _cc2 = _interopRequireDefault(_cc);
 
@@ -48786,15 +49596,15 @@ module.exports =
 
 	var _link2 = _interopRequireDefault(_link);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _iconSquareSmall = __webpack_require__(455);
+	var _iconSquareSmall = __webpack_require__(431);
 
 	var _iconSquareSmall2 = _interopRequireDefault(_iconSquareSmall);
 
-	__webpack_require__(420);
+	__webpack_require__(396);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -48867,9 +49677,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 395 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 370 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48881,7 +49691,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _siteLogo = __webpack_require__(456);
+	var _siteLogo = __webpack_require__(432);
 
 	var _siteLogo2 = _interopRequireDefault(_siteLogo);
 
@@ -48891,9 +49701,9 @@ module.exports =
 	  return _react2.default.createElement('img', { className: 'logo', src: _siteLogo2.default });
 	};
 
-/***/ },
-/* 396 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 371 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -48911,11 +49721,11 @@ module.exports =
 
 	var _link2 = _interopRequireDefault(_link);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _logo = __webpack_require__(395);
+	var _logo = __webpack_require__(370);
 
 	var _logo2 = _interopRequireDefault(_logo);
 
@@ -49131,9 +49941,9 @@ module.exports =
 
 	exports.default = Navigation;
 
-/***/ },
-/* 397 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 372 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49145,11 +49955,11 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _contributors = __webpack_require__(190);
+	var _contributors = __webpack_require__(194);
 
 	var _contributors2 = _interopRequireDefault(_contributors);
 
@@ -49157,11 +49967,11 @@ module.exports =
 
 	var _link2 = _interopRequireDefault(_link);
 
-	var _projects = __webpack_require__(462);
+	var _projects = __webpack_require__(438);
 
 	var _projects2 = _interopRequireDefault(_projects);
 
-	__webpack_require__(424);
+	__webpack_require__(400);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -49260,9 +50070,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 398 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 373 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49359,9 +50169,9 @@ module.exports =
 
 	exports.default = SidebarItem;
 
-/***/ },
-/* 399 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 374 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49614,9 +50424,9 @@ module.exports =
 
 	exports.default = SidebarMobile;
 
-/***/ },
-/* 400 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 375 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49628,7 +50438,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _sidebarItem = __webpack_require__(398);
+	var _sidebarItem = __webpack_require__(373);
 
 	var _sidebarItem2 = _interopRequireDefault(_sidebarItem);
 
@@ -49681,9 +50491,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 401 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 376 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49699,7 +50509,7 @@ module.exports =
 
 	var _link2 = _interopRequireDefault(_link);
 
-	__webpack_require__(429);
+	__webpack_require__(405);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -49750,9 +50560,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 402 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 377 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49764,41 +50574,41 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _antwarInteractive = __webpack_require__(41);
+	var _antwarInteractive = __webpack_require__(40);
 
 	var _antwarInteractive2 = _interopRequireDefault(_antwarInteractive);
 
-	var _antwarHelpers = __webpack_require__(385);
+	var _antwarHelpers = __webpack_require__(360);
 
-	var _navigation = __webpack_require__(396);
+	var _navigation = __webpack_require__(371);
 
 	var _navigation2 = _interopRequireDefault(_navigation);
 
-	var _footer = __webpack_require__(394);
+	var _footer = __webpack_require__(369);
 
 	var _footer2 = _interopRequireDefault(_footer);
 
-	var _sidebarMobile = __webpack_require__(399);
+	var _sidebarMobile = __webpack_require__(374);
 
 	var _sidebarMobile2 = _interopRequireDefault(_sidebarMobile);
 
-	__webpack_require__(430);
+	__webpack_require__(406);
 
-	__webpack_require__(191);
+	__webpack_require__(195);
 
-	__webpack_require__(415);
+	__webpack_require__(391);
 
-	__webpack_require__(417);
+	__webpack_require__(393);
 
-	__webpack_require__(422);
+	__webpack_require__(398);
 
-	__webpack_require__(423);
+	__webpack_require__(399);
 
-	__webpack_require__(427);
+	__webpack_require__(403);
 
-	__webpack_require__(426);
+	__webpack_require__(402);
 
-	__webpack_require__(421);
+	__webpack_require__(397);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -49849,9 +50659,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 403 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 378 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49865,15 +50675,15 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _cube = __webpack_require__(393);
+	var _cube = __webpack_require__(368);
 
 	var _cube2 = _interopRequireDefault(_cube);
 
-	var _textRotater = __webpack_require__(406);
+	var _textRotater = __webpack_require__(381);
 
 	var _textRotater2 = _interopRequireDefault(_textRotater);
 
-	var _homepageModules = __webpack_require__(454);
+	var _homepageModules = __webpack_require__(430);
 
 	var _homepageModules2 = _interopRequireDefault(_homepageModules);
 
@@ -49948,9 +50758,9 @@ module.exports =
 
 	exports.default = SplashViz;
 
-/***/ },
-/* 404 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 379 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -49962,29 +50772,29 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _antwarInteractive = __webpack_require__(41);
+	var _antwarInteractive = __webpack_require__(40);
 
 	var _antwarInteractive2 = _interopRequireDefault(_antwarInteractive);
 
-	var _container = __webpack_require__(28);
+	var _container = __webpack_require__(27);
 
 	var _container2 = _interopRequireDefault(_container);
 
-	var _splashViz = __webpack_require__(403);
+	var _splashViz = __webpack_require__(378);
 
 	var _splashViz2 = _interopRequireDefault(_splashViz);
 
-	var _support = __webpack_require__(405);
+	var _support = __webpack_require__(380);
 
 	var _support2 = _interopRequireDefault(_support);
 
-	__webpack_require__(432);
+	__webpack_require__(408);
 
-	__webpack_require__(431);
+	__webpack_require__(407);
 
-	__webpack_require__(419);
+	__webpack_require__(395);
 
-	__webpack_require__(434);
+	__webpack_require__(410);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -50042,9 +50852,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 405 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 380 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -50056,7 +50866,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	__webpack_require__(433);
+	__webpack_require__(409);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -50084,9 +50894,9 @@ module.exports =
 	  );
 	};
 
-/***/ },
-/* 406 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 381 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -50234,9 +51044,9 @@ module.exports =
 	  maxWidth: _react.PropTypes.number
 	};
 
-/***/ },
-/* 407 */
-/***/ function(module, exports) {
+/***/ }),
+/* 382 */
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -50419,9 +51229,9 @@ module.exports =
 	  });
 	}
 
-/***/ },
-/* 408 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 383 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
@@ -50436,7 +51246,7 @@ module.exports =
 	exports.createItem = createItem;
 	exports.vote = vote;
 
-	var _api = __webpack_require__(407);
+	var _api = __webpack_require__(382);
 
 	var API_URL = "https://oswils44oj.execute-api.us-east-1.amazonaws.com/production/";
 	var GITHUB_CLIENT_ID = "4d355e2799cb8926c665";
@@ -50544,9 +51354,9 @@ module.exports =
 	  });
 	}
 
-/***/ },
-/* 409 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 384 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -50564,21 +51374,21 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	__webpack_require__(582);
+	__webpack_require__(561);
 
-	var _api = __webpack_require__(408);
+	var _api = __webpack_require__(383);
 
 	var api = _interopRequireWildcard(_api);
 
-	var _button = __webpack_require__(410);
+	var _button = __webpack_require__(385);
 
 	var _button2 = _interopRequireDefault(_button);
 
-	var _influence = __webpack_require__(411);
+	var _influence = __webpack_require__(386);
 
 	var _influence2 = _interopRequireDefault(_influence);
 
-	var _githubLogo = __webpack_require__(453);
+	var _githubLogo = __webpack_require__(429);
 
 	var _githubLogo2 = _interopRequireDefault(_githubLogo);
 
@@ -51097,9 +51907,9 @@ module.exports =
 
 	exports.default = VoteApp;
 
-/***/ },
-/* 410 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 385 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
@@ -51342,9 +52152,9 @@ module.exports =
 	  );
 	}
 
-/***/ },
-/* 411 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 386 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	"use strict";
 
@@ -51435,13 +52245,891 @@ module.exports =
 
 	exports.default = InfluenceComponent;
 
-/***/ },
-/* 412 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 387 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var _assign = __webpack_require__(6);
+
+	var emptyObject = __webpack_require__(41);
+	var _invariant = __webpack_require__(3);
+
+	if (true) {
+	  var warning = __webpack_require__(4);
+	}
+
+	var MIXINS_KEY = 'mixins';
+
+	// Helper function to allow the creation of anonymous functions which do not
+	// have .name set to the name of the variable being assigned to.
+	function identity(fn) {
+	  return fn;
+	}
+
+	var ReactPropTypeLocationNames;
+	if (true) {
+	  ReactPropTypeLocationNames = {
+	    prop: 'prop',
+	    context: 'context',
+	    childContext: 'child context'
+	  };
+	} else {
+	  ReactPropTypeLocationNames = {};
+	}
+
+	function factory(ReactComponent, isValidElement, ReactNoopUpdateQueue) {
+	  /**
+	   * Policies that describe methods in `ReactClassInterface`.
+	   */
+
+	  var injectedMixins = [];
+
+	  /**
+	   * Composite components are higher-level components that compose other composite
+	   * or host components.
+	   *
+	   * To create a new type of `ReactClass`, pass a specification of
+	   * your new class to `React.createClass`. The only requirement of your class
+	   * specification is that you implement a `render` method.
+	   *
+	   *   var MyComponent = React.createClass({
+	   *     render: function() {
+	   *       return <div>Hello World</div>;
+	   *     }
+	   *   });
+	   *
+	   * The class specification supports a specific protocol of methods that have
+	   * special meaning (e.g. `render`). See `ReactClassInterface` for
+	   * more the comprehensive protocol. Any other properties and methods in the
+	   * class specification will be available on the prototype.
+	   *
+	   * @interface ReactClassInterface
+	   * @internal
+	   */
+	  var ReactClassInterface = {
+	    /**
+	     * An array of Mixin objects to include when defining your component.
+	     *
+	     * @type {array}
+	     * @optional
+	     */
+	    mixins: 'DEFINE_MANY',
+
+	    /**
+	     * An object containing properties and methods that should be defined on
+	     * the component's constructor instead of its prototype (static methods).
+	     *
+	     * @type {object}
+	     * @optional
+	     */
+	    statics: 'DEFINE_MANY',
+
+	    /**
+	     * Definition of prop types for this component.
+	     *
+	     * @type {object}
+	     * @optional
+	     */
+	    propTypes: 'DEFINE_MANY',
+
+	    /**
+	     * Definition of context types for this component.
+	     *
+	     * @type {object}
+	     * @optional
+	     */
+	    contextTypes: 'DEFINE_MANY',
+
+	    /**
+	     * Definition of context types this component sets for its children.
+	     *
+	     * @type {object}
+	     * @optional
+	     */
+	    childContextTypes: 'DEFINE_MANY',
+
+	    // ==== Definition methods ====
+
+	    /**
+	     * Invoked when the component is mounted. Values in the mapping will be set on
+	     * `this.props` if that prop is not specified (i.e. using an `in` check).
+	     *
+	     * This method is invoked before `getInitialState` and therefore cannot rely
+	     * on `this.state` or use `this.setState`.
+	     *
+	     * @return {object}
+	     * @optional
+	     */
+	    getDefaultProps: 'DEFINE_MANY_MERGED',
+
+	    /**
+	     * Invoked once before the component is mounted. The return value will be used
+	     * as the initial value of `this.state`.
+	     *
+	     *   getInitialState: function() {
+	     *     return {
+	     *       isOn: false,
+	     *       fooBaz: new BazFoo()
+	     *     }
+	     *   }
+	     *
+	     * @return {object}
+	     * @optional
+	     */
+	    getInitialState: 'DEFINE_MANY_MERGED',
+
+	    /**
+	     * @return {object}
+	     * @optional
+	     */
+	    getChildContext: 'DEFINE_MANY_MERGED',
+
+	    /**
+	     * Uses props from `this.props` and state from `this.state` to render the
+	     * structure of the component.
+	     *
+	     * No guarantees are made about when or how often this method is invoked, so
+	     * it must not have side effects.
+	     *
+	     *   render: function() {
+	     *     var name = this.props.name;
+	     *     return <div>Hello, {name}!</div>;
+	     *   }
+	     *
+	     * @return {ReactComponent}
+	     * @required
+	     */
+	    render: 'DEFINE_ONCE',
+
+	    // ==== Delegate methods ====
+
+	    /**
+	     * Invoked when the component is initially created and about to be mounted.
+	     * This may have side effects, but any external subscriptions or data created
+	     * by this method must be cleaned up in `componentWillUnmount`.
+	     *
+	     * @optional
+	     */
+	    componentWillMount: 'DEFINE_MANY',
+
+	    /**
+	     * Invoked when the component has been mounted and has a DOM representation.
+	     * However, there is no guarantee that the DOM node is in the document.
+	     *
+	     * Use this as an opportunity to operate on the DOM when the component has
+	     * been mounted (initialized and rendered) for the first time.
+	     *
+	     * @param {DOMElement} rootNode DOM element representing the component.
+	     * @optional
+	     */
+	    componentDidMount: 'DEFINE_MANY',
+
+	    /**
+	     * Invoked before the component receives new props.
+	     *
+	     * Use this as an opportunity to react to a prop transition by updating the
+	     * state using `this.setState`. Current props are accessed via `this.props`.
+	     *
+	     *   componentWillReceiveProps: function(nextProps, nextContext) {
+	     *     this.setState({
+	     *       likesIncreasing: nextProps.likeCount > this.props.likeCount
+	     *     });
+	     *   }
+	     *
+	     * NOTE: There is no equivalent `componentWillReceiveState`. An incoming prop
+	     * transition may cause a state change, but the opposite is not true. If you
+	     * need it, you are probably looking for `componentWillUpdate`.
+	     *
+	     * @param {object} nextProps
+	     * @optional
+	     */
+	    componentWillReceiveProps: 'DEFINE_MANY',
+
+	    /**
+	     * Invoked while deciding if the component should be updated as a result of
+	     * receiving new props, state and/or context.
+	     *
+	     * Use this as an opportunity to `return false` when you're certain that the
+	     * transition to the new props/state/context will not require a component
+	     * update.
+	     *
+	     *   shouldComponentUpdate: function(nextProps, nextState, nextContext) {
+	     *     return !equal(nextProps, this.props) ||
+	     *       !equal(nextState, this.state) ||
+	     *       !equal(nextContext, this.context);
+	     *   }
+	     *
+	     * @param {object} nextProps
+	     * @param {?object} nextState
+	     * @param {?object} nextContext
+	     * @return {boolean} True if the component should update.
+	     * @optional
+	     */
+	    shouldComponentUpdate: 'DEFINE_ONCE',
+
+	    /**
+	     * Invoked when the component is about to update due to a transition from
+	     * `this.props`, `this.state` and `this.context` to `nextProps`, `nextState`
+	     * and `nextContext`.
+	     *
+	     * Use this as an opportunity to perform preparation before an update occurs.
+	     *
+	     * NOTE: You **cannot** use `this.setState()` in this method.
+	     *
+	     * @param {object} nextProps
+	     * @param {?object} nextState
+	     * @param {?object} nextContext
+	     * @param {ReactReconcileTransaction} transaction
+	     * @optional
+	     */
+	    componentWillUpdate: 'DEFINE_MANY',
+
+	    /**
+	     * Invoked when the component's DOM representation has been updated.
+	     *
+	     * Use this as an opportunity to operate on the DOM when the component has
+	     * been updated.
+	     *
+	     * @param {object} prevProps
+	     * @param {?object} prevState
+	     * @param {?object} prevContext
+	     * @param {DOMElement} rootNode DOM element representing the component.
+	     * @optional
+	     */
+	    componentDidUpdate: 'DEFINE_MANY',
+
+	    /**
+	     * Invoked when the component is about to be removed from its parent and have
+	     * its DOM representation destroyed.
+	     *
+	     * Use this as an opportunity to deallocate any external resources.
+	     *
+	     * NOTE: There is no `componentDidUnmount` since your component will have been
+	     * destroyed by that point.
+	     *
+	     * @optional
+	     */
+	    componentWillUnmount: 'DEFINE_MANY',
+
+	    // ==== Advanced methods ====
+
+	    /**
+	     * Updates the component's currently mounted DOM representation.
+	     *
+	     * By default, this implements React's rendering and reconciliation algorithm.
+	     * Sophisticated clients may wish to override this.
+	     *
+	     * @param {ReactReconcileTransaction} transaction
+	     * @internal
+	     * @overridable
+	     */
+	    updateComponent: 'OVERRIDE_BASE'
+	  };
+
+	  /**
+	   * Mapping from class specification keys to special processing functions.
+	   *
+	   * Although these are declared like instance properties in the specification
+	   * when defining classes using `React.createClass`, they are actually static
+	   * and are accessible on the constructor instead of the prototype. Despite
+	   * being static, they must be defined outside of the "statics" key under
+	   * which all other static methods are defined.
+	   */
+	  var RESERVED_SPEC_KEYS = {
+	    displayName: function(Constructor, displayName) {
+	      Constructor.displayName = displayName;
+	    },
+	    mixins: function(Constructor, mixins) {
+	      if (mixins) {
+	        for (var i = 0; i < mixins.length; i++) {
+	          mixSpecIntoComponent(Constructor, mixins[i]);
+	        }
+	      }
+	    },
+	    childContextTypes: function(Constructor, childContextTypes) {
+	      if (true) {
+	        validateTypeDef(Constructor, childContextTypes, 'childContext');
+	      }
+	      Constructor.childContextTypes = _assign(
+	        {},
+	        Constructor.childContextTypes,
+	        childContextTypes
+	      );
+	    },
+	    contextTypes: function(Constructor, contextTypes) {
+	      if (true) {
+	        validateTypeDef(Constructor, contextTypes, 'context');
+	      }
+	      Constructor.contextTypes = _assign(
+	        {},
+	        Constructor.contextTypes,
+	        contextTypes
+	      );
+	    },
+	    /**
+	     * Special case getDefaultProps which should move into statics but requires
+	     * automatic merging.
+	     */
+	    getDefaultProps: function(Constructor, getDefaultProps) {
+	      if (Constructor.getDefaultProps) {
+	        Constructor.getDefaultProps = createMergedResultFunction(
+	          Constructor.getDefaultProps,
+	          getDefaultProps
+	        );
+	      } else {
+	        Constructor.getDefaultProps = getDefaultProps;
+	      }
+	    },
+	    propTypes: function(Constructor, propTypes) {
+	      if (true) {
+	        validateTypeDef(Constructor, propTypes, 'prop');
+	      }
+	      Constructor.propTypes = _assign({}, Constructor.propTypes, propTypes);
+	    },
+	    statics: function(Constructor, statics) {
+	      mixStaticSpecIntoComponent(Constructor, statics);
+	    },
+	    autobind: function() {}
+	  };
+
+	  function validateTypeDef(Constructor, typeDef, location) {
+	    for (var propName in typeDef) {
+	      if (typeDef.hasOwnProperty(propName)) {
+	        // use a warning instead of an _invariant so components
+	        // don't show up in prod but only in __DEV__
+	        if (true) {
+	          warning(
+	            typeof typeDef[propName] === 'function',
+	            '%s: %s type `%s` is invalid; it must be a function, usually from ' +
+	              'React.PropTypes.',
+	            Constructor.displayName || 'ReactClass',
+	            ReactPropTypeLocationNames[location],
+	            propName
+	          );
+	        }
+	      }
+	    }
+	  }
+
+	  function validateMethodOverride(isAlreadyDefined, name) {
+	    var specPolicy = ReactClassInterface.hasOwnProperty(name)
+	      ? ReactClassInterface[name]
+	      : null;
+
+	    // Disallow overriding of base class methods unless explicitly allowed.
+	    if (ReactClassMixin.hasOwnProperty(name)) {
+	      _invariant(
+	        specPolicy === 'OVERRIDE_BASE',
+	        'ReactClassInterface: You are attempting to override ' +
+	          '`%s` from your class specification. Ensure that your method names ' +
+	          'do not overlap with React methods.',
+	        name
+	      );
+	    }
+
+	    // Disallow defining methods more than once unless explicitly allowed.
+	    if (isAlreadyDefined) {
+	      _invariant(
+	        specPolicy === 'DEFINE_MANY' || specPolicy === 'DEFINE_MANY_MERGED',
+	        'ReactClassInterface: You are attempting to define ' +
+	          '`%s` on your component more than once. This conflict may be due ' +
+	          'to a mixin.',
+	        name
+	      );
+	    }
+	  }
+
+	  /**
+	   * Mixin helper which handles policy validation and reserved
+	   * specification keys when building React classes.
+	   */
+	  function mixSpecIntoComponent(Constructor, spec) {
+	    if (!spec) {
+	      if (true) {
+	        var typeofSpec = typeof spec;
+	        var isMixinValid = typeofSpec === 'object' && spec !== null;
+
+	        if (true) {
+	          warning(
+	            isMixinValid,
+	            "%s: You're attempting to include a mixin that is either null " +
+	              'or not an object. Check the mixins included by the component, ' +
+	              'as well as any mixins they include themselves. ' +
+	              'Expected object but got %s.',
+	            Constructor.displayName || 'ReactClass',
+	            spec === null ? null : typeofSpec
+	          );
+	        }
+	      }
+
+	      return;
+	    }
+
+	    _invariant(
+	      typeof spec !== 'function',
+	      "ReactClass: You're attempting to " +
+	        'use a component class or function as a mixin. Instead, just use a ' +
+	        'regular object.'
+	    );
+	    _invariant(
+	      !isValidElement(spec),
+	      "ReactClass: You're attempting to " +
+	        'use a component as a mixin. Instead, just use a regular object.'
+	    );
+
+	    var proto = Constructor.prototype;
+	    var autoBindPairs = proto.__reactAutoBindPairs;
+
+	    // By handling mixins before any other properties, we ensure the same
+	    // chaining order is applied to methods with DEFINE_MANY policy, whether
+	    // mixins are listed before or after these methods in the spec.
+	    if (spec.hasOwnProperty(MIXINS_KEY)) {
+	      RESERVED_SPEC_KEYS.mixins(Constructor, spec.mixins);
+	    }
+
+	    for (var name in spec) {
+	      if (!spec.hasOwnProperty(name)) {
+	        continue;
+	      }
+
+	      if (name === MIXINS_KEY) {
+	        // We have already handled mixins in a special case above.
+	        continue;
+	      }
+
+	      var property = spec[name];
+	      var isAlreadyDefined = proto.hasOwnProperty(name);
+	      validateMethodOverride(isAlreadyDefined, name);
+
+	      if (RESERVED_SPEC_KEYS.hasOwnProperty(name)) {
+	        RESERVED_SPEC_KEYS[name](Constructor, property);
+	      } else {
+	        // Setup methods on prototype:
+	        // The following member methods should not be automatically bound:
+	        // 1. Expected ReactClass methods (in the "interface").
+	        // 2. Overridden methods (that were mixed in).
+	        var isReactClassMethod = ReactClassInterface.hasOwnProperty(name);
+	        var isFunction = typeof property === 'function';
+	        var shouldAutoBind =
+	          isFunction &&
+	          !isReactClassMethod &&
+	          !isAlreadyDefined &&
+	          spec.autobind !== false;
+
+	        if (shouldAutoBind) {
+	          autoBindPairs.push(name, property);
+	          proto[name] = property;
+	        } else {
+	          if (isAlreadyDefined) {
+	            var specPolicy = ReactClassInterface[name];
+
+	            // These cases should already be caught by validateMethodOverride.
+	            _invariant(
+	              isReactClassMethod &&
+	                (specPolicy === 'DEFINE_MANY_MERGED' ||
+	                  specPolicy === 'DEFINE_MANY'),
+	              'ReactClass: Unexpected spec policy %s for key %s ' +
+	                'when mixing in component specs.',
+	              specPolicy,
+	              name
+	            );
+
+	            // For methods which are defined more than once, call the existing
+	            // methods before calling the new property, merging if appropriate.
+	            if (specPolicy === 'DEFINE_MANY_MERGED') {
+	              proto[name] = createMergedResultFunction(proto[name], property);
+	            } else if (specPolicy === 'DEFINE_MANY') {
+	              proto[name] = createChainedFunction(proto[name], property);
+	            }
+	          } else {
+	            proto[name] = property;
+	            if (true) {
+	              // Add verbose displayName to the function, which helps when looking
+	              // at profiling tools.
+	              if (typeof property === 'function' && spec.displayName) {
+	                proto[name].displayName = spec.displayName + '_' + name;
+	              }
+	            }
+	          }
+	        }
+	      }
+	    }
+	  }
+
+	  function mixStaticSpecIntoComponent(Constructor, statics) {
+	    if (!statics) {
+	      return;
+	    }
+	    for (var name in statics) {
+	      var property = statics[name];
+	      if (!statics.hasOwnProperty(name)) {
+	        continue;
+	      }
+
+	      var isReserved = name in RESERVED_SPEC_KEYS;
+	      _invariant(
+	        !isReserved,
+	        'ReactClass: You are attempting to define a reserved ' +
+	          'property, `%s`, that shouldn\'t be on the "statics" key. Define it ' +
+	          'as an instance property instead; it will still be accessible on the ' +
+	          'constructor.',
+	        name
+	      );
+
+	      var isInherited = name in Constructor;
+	      _invariant(
+	        !isInherited,
+	        'ReactClass: You are attempting to define ' +
+	          '`%s` on your component more than once. This conflict may be ' +
+	          'due to a mixin.',
+	        name
+	      );
+	      Constructor[name] = property;
+	    }
+	  }
+
+	  /**
+	   * Merge two objects, but throw if both contain the same key.
+	   *
+	   * @param {object} one The first object, which is mutated.
+	   * @param {object} two The second object
+	   * @return {object} one after it has been mutated to contain everything in two.
+	   */
+	  function mergeIntoWithNoDuplicateKeys(one, two) {
+	    _invariant(
+	      one && two && typeof one === 'object' && typeof two === 'object',
+	      'mergeIntoWithNoDuplicateKeys(): Cannot merge non-objects.'
+	    );
+
+	    for (var key in two) {
+	      if (two.hasOwnProperty(key)) {
+	        _invariant(
+	          one[key] === undefined,
+	          'mergeIntoWithNoDuplicateKeys(): ' +
+	            'Tried to merge two objects with the same key: `%s`. This conflict ' +
+	            'may be due to a mixin; in particular, this may be caused by two ' +
+	            'getInitialState() or getDefaultProps() methods returning objects ' +
+	            'with clashing keys.',
+	          key
+	        );
+	        one[key] = two[key];
+	      }
+	    }
+	    return one;
+	  }
+
+	  /**
+	   * Creates a function that invokes two functions and merges their return values.
+	   *
+	   * @param {function} one Function to invoke first.
+	   * @param {function} two Function to invoke second.
+	   * @return {function} Function that invokes the two argument functions.
+	   * @private
+	   */
+	  function createMergedResultFunction(one, two) {
+	    return function mergedResult() {
+	      var a = one.apply(this, arguments);
+	      var b = two.apply(this, arguments);
+	      if (a == null) {
+	        return b;
+	      } else if (b == null) {
+	        return a;
+	      }
+	      var c = {};
+	      mergeIntoWithNoDuplicateKeys(c, a);
+	      mergeIntoWithNoDuplicateKeys(c, b);
+	      return c;
+	    };
+	  }
+
+	  /**
+	   * Creates a function that invokes two functions and ignores their return vales.
+	   *
+	   * @param {function} one Function to invoke first.
+	   * @param {function} two Function to invoke second.
+	   * @return {function} Function that invokes the two argument functions.
+	   * @private
+	   */
+	  function createChainedFunction(one, two) {
+	    return function chainedFunction() {
+	      one.apply(this, arguments);
+	      two.apply(this, arguments);
+	    };
+	  }
+
+	  /**
+	   * Binds a method to the component.
+	   *
+	   * @param {object} component Component whose method is going to be bound.
+	   * @param {function} method Method to be bound.
+	   * @return {function} The bound method.
+	   */
+	  function bindAutoBindMethod(component, method) {
+	    var boundMethod = method.bind(component);
+	    if (true) {
+	      boundMethod.__reactBoundContext = component;
+	      boundMethod.__reactBoundMethod = method;
+	      boundMethod.__reactBoundArguments = null;
+	      var componentName = component.constructor.displayName;
+	      var _bind = boundMethod.bind;
+	      boundMethod.bind = function(newThis) {
+	        for (
+	          var _len = arguments.length,
+	            args = Array(_len > 1 ? _len - 1 : 0),
+	            _key = 1;
+	          _key < _len;
+	          _key++
+	        ) {
+	          args[_key - 1] = arguments[_key];
+	        }
+
+	        // User is trying to bind() an autobound method; we effectively will
+	        // ignore the value of "this" that the user is trying to use, so
+	        // let's warn.
+	        if (newThis !== component && newThis !== null) {
+	          if (true) {
+	            warning(
+	              false,
+	              'bind(): React component methods may only be bound to the ' +
+	                'component instance. See %s',
+	              componentName
+	            );
+	          }
+	        } else if (!args.length) {
+	          if (true) {
+	            warning(
+	              false,
+	              'bind(): You are binding a component method to the component. ' +
+	                'React does this for you automatically in a high-performance ' +
+	                'way, so you can safely remove this call. See %s',
+	              componentName
+	            );
+	          }
+	          return boundMethod;
+	        }
+	        var reboundMethod = _bind.apply(boundMethod, arguments);
+	        reboundMethod.__reactBoundContext = component;
+	        reboundMethod.__reactBoundMethod = method;
+	        reboundMethod.__reactBoundArguments = args;
+	        return reboundMethod;
+	      };
+	    }
+	    return boundMethod;
+	  }
+
+	  /**
+	   * Binds all auto-bound methods in a component.
+	   *
+	   * @param {object} component Component whose method is going to be bound.
+	   */
+	  function bindAutoBindMethods(component) {
+	    var pairs = component.__reactAutoBindPairs;
+	    for (var i = 0; i < pairs.length; i += 2) {
+	      var autoBindKey = pairs[i];
+	      var method = pairs[i + 1];
+	      component[autoBindKey] = bindAutoBindMethod(component, method);
+	    }
+	  }
+
+	  var IsMountedPreMixin = {
+	    componentDidMount: function() {
+	      this.__isMounted = true;
+	    }
+	  };
+
+	  var IsMountedPostMixin = {
+	    componentWillUnmount: function() {
+	      this.__isMounted = false;
+	    }
+	  };
+
+	  /**
+	   * Add more to the ReactClass base class. These are all legacy features and
+	   * therefore not already part of the modern ReactComponent.
+	   */
+	  var ReactClassMixin = {
+	    /**
+	     * TODO: This will be deprecated because state should always keep a consistent
+	     * type signature and the only use case for this, is to avoid that.
+	     */
+	    replaceState: function(newState, callback) {
+	      this.updater.enqueueReplaceState(this, newState, callback);
+	    },
+
+	    /**
+	     * Checks whether or not this composite component is mounted.
+	     * @return {boolean} True if mounted, false otherwise.
+	     * @protected
+	     * @final
+	     */
+	    isMounted: function() {
+	      if (true) {
+	        warning(
+	          this.__didWarnIsMounted,
+	          '%s: isMounted is deprecated. Instead, make sure to clean up ' +
+	            'subscriptions and pending requests in componentWillUnmount to ' +
+	            'prevent memory leaks.',
+	          (this.constructor && this.constructor.displayName) ||
+	            this.name ||
+	            'Component'
+	        );
+	        this.__didWarnIsMounted = true;
+	      }
+	      return !!this.__isMounted;
+	    }
+	  };
+
+	  var ReactClassComponent = function() {};
+	  _assign(
+	    ReactClassComponent.prototype,
+	    ReactComponent.prototype,
+	    ReactClassMixin
+	  );
+
+	  /**
+	   * Creates a composite component class given a class specification.
+	   * See https://facebook.github.io/react/docs/top-level-api.html#react.createclass
+	   *
+	   * @param {object} spec Class specification (which must define `render`).
+	   * @return {function} Component constructor function.
+	   * @public
+	   */
+	  function createClass(spec) {
+	    // To keep our warnings more understandable, we'll use a little hack here to
+	    // ensure that Constructor.name !== 'Constructor'. This makes sure we don't
+	    // unnecessarily identify a class without displayName as 'Constructor'.
+	    var Constructor = identity(function(props, context, updater) {
+	      // This constructor gets overridden by mocks. The argument is used
+	      // by mocks to assert on what gets mounted.
+
+	      if (true) {
+	        warning(
+	          this instanceof Constructor,
+	          'Something is calling a React component directly. Use a factory or ' +
+	            'JSX instead. See: https://fb.me/react-legacyfactory'
+	        );
+	      }
+
+	      // Wire up auto-binding
+	      if (this.__reactAutoBindPairs.length) {
+	        bindAutoBindMethods(this);
+	      }
+
+	      this.props = props;
+	      this.context = context;
+	      this.refs = emptyObject;
+	      this.updater = updater || ReactNoopUpdateQueue;
+
+	      this.state = null;
+
+	      // ReactClasses doesn't have constructors. Instead, they use the
+	      // getInitialState and componentWillMount methods for initialization.
+
+	      var initialState = this.getInitialState ? this.getInitialState() : null;
+	      if (true) {
+	        // We allow auto-mocks to proceed as if they're returning null.
+	        if (
+	          initialState === undefined &&
+	          this.getInitialState._isMockFunction
+	        ) {
+	          // This is probably bad practice. Consider warning here and
+	          // deprecating this convenience.
+	          initialState = null;
+	        }
+	      }
+	      _invariant(
+	        typeof initialState === 'object' && !Array.isArray(initialState),
+	        '%s.getInitialState(): must return an object or null',
+	        Constructor.displayName || 'ReactCompositeComponent'
+	      );
+
+	      this.state = initialState;
+	    });
+	    Constructor.prototype = new ReactClassComponent();
+	    Constructor.prototype.constructor = Constructor;
+	    Constructor.prototype.__reactAutoBindPairs = [];
+
+	    injectedMixins.forEach(mixSpecIntoComponent.bind(null, Constructor));
+
+	    mixSpecIntoComponent(Constructor, IsMountedPreMixin);
+	    mixSpecIntoComponent(Constructor, spec);
+	    mixSpecIntoComponent(Constructor, IsMountedPostMixin);
+
+	    // Initialize the defaultProps property after all mixins have been merged.
+	    if (Constructor.getDefaultProps) {
+	      Constructor.defaultProps = Constructor.getDefaultProps();
+	    }
+
+	    if (true) {
+	      // This is a tag to indicate that the use of these method names is ok,
+	      // since it's used with createClass. If it's not, then it's likely a
+	      // mistake so we'll warn you to use the static property, property
+	      // initializer or constructor respectively.
+	      if (Constructor.getDefaultProps) {
+	        Constructor.getDefaultProps.isReactClassApproved = {};
+	      }
+	      if (Constructor.prototype.getInitialState) {
+	        Constructor.prototype.getInitialState.isReactClassApproved = {};
+	      }
+	    }
+
+	    _invariant(
+	      Constructor.prototype.render,
+	      'createClass(...): Class specification must implement a `render` method.'
+	    );
+
+	    if (true) {
+	      warning(
+	        !Constructor.prototype.componentShouldUpdate,
+	        '%s has a method called ' +
+	          'componentShouldUpdate(). Did you mean shouldComponentUpdate()? ' +
+	          'The name is phrased as a question because the function is ' +
+	          'expected to return a value.',
+	        spec.displayName || 'A component'
+	      );
+	      warning(
+	        !Constructor.prototype.componentWillRecieveProps,
+	        '%s has a method called ' +
+	          'componentWillRecieveProps(). Did you mean componentWillReceiveProps()?',
+	        spec.displayName || 'A component'
+	      );
+	    }
+
+	    // Reduce time spent doing lookups by setting these on the prototype.
+	    for (var methodName in ReactClassInterface) {
+	      if (!Constructor.prototype[methodName]) {
+	        Constructor.prototype[methodName] = null;
+	      }
+	    }
+
+	    return Constructor;
+	  }
+
+	  return createClass;
+	}
+
+	module.exports = factory;
+
+
+/***/ }),
+/* 388 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var pSlice = Array.prototype.slice;
-	var objectKeys = __webpack_require__(414);
-	var isArguments = __webpack_require__(413);
+	var objectKeys = __webpack_require__(390);
+	var isArguments = __webpack_require__(389);
 
 	var deepEqual = module.exports = function (actual, expected, opts) {
 	  if (!opts) opts = {};
@@ -51535,9 +53223,9 @@ module.exports =
 	}
 
 
-/***/ },
-/* 413 */
-/***/ function(module, exports) {
+/***/ }),
+/* 389 */
+/***/ (function(module, exports) {
 
 	var supportsArgumentsClass = (function(){
 	  return Object.prototype.toString.call(arguments)
@@ -51561,9 +53249,9 @@ module.exports =
 	};
 
 
-/***/ },
-/* 414 */
-/***/ function(module, exports) {
+/***/ }),
+/* 390 */
+/***/ (function(module, exports) {
 
 	exports = module.exports = typeof Object.keys === 'function'
 	  ? Object.keys : shim;
@@ -51576,57 +53264,57 @@ module.exports =
 	}
 
 
-/***/ },
+/***/ }),
+/* 391 */
+195,
+/* 392 */
+195,
+/* 393 */
+195,
+/* 394 */
+195,
+/* 395 */
+195,
+/* 396 */
+195,
+/* 397 */
+195,
+/* 398 */
+195,
+/* 399 */
+195,
+/* 400 */
+195,
+/* 401 */
+195,
+/* 402 */
+195,
+/* 403 */
+195,
+/* 404 */
+195,
+/* 405 */
+195,
+/* 406 */
+195,
+/* 407 */
+195,
+/* 408 */
+195,
+/* 409 */
+195,
+/* 410 */
+195,
+/* 411 */
+195,
+/* 412 */
+195,
+/* 413 */
+195,
+/* 414 */
+195,
 /* 415 */
-191,
-/* 416 */
-191,
-/* 417 */
-191,
-/* 418 */
-191,
-/* 419 */
-191,
-/* 420 */
-191,
-/* 421 */
-191,
-/* 422 */
-191,
-/* 423 */
-191,
-/* 424 */
-191,
-/* 425 */
-191,
-/* 426 */
-191,
-/* 427 */
-191,
-/* 428 */
-191,
-/* 429 */
-191,
-/* 430 */
-191,
-/* 431 */
-191,
-/* 432 */
-191,
-/* 433 */
-191,
-/* 434 */
-191,
-/* 435 */
-191,
-/* 436 */
-191,
-/* 437 */
-191,
-/* 438 */
-191,
-/* 439 */
-/***/ function(module, exports) {
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -51660,9 +53348,9 @@ module.exports =
 
 	module.exports = camelize;
 
-/***/ },
-/* 440 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 416 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -51677,7 +53365,7 @@ module.exports =
 
 	'use strict';
 
-	var camelize = __webpack_require__(439);
+	var camelize = __webpack_require__(415);
 
 	var msPattern = /^-ms-/;
 
@@ -51704,9 +53392,9 @@ module.exports =
 
 	module.exports = camelizeStyleName;
 
-/***/ },
-/* 441 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 417 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -51721,7 +53409,7 @@ module.exports =
 	 * 
 	 */
 
-	var isTextNode = __webpack_require__(449);
+	var isTextNode = __webpack_require__(425);
 
 	/*eslint-disable no-bitwise */
 
@@ -51748,9 +53436,9 @@ module.exports =
 
 	module.exports = containsNode;
 
-/***/ },
-/* 442 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 418 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -51879,9 +53567,9 @@ module.exports =
 
 	module.exports = createArrayFromMixed;
 
-/***/ },
-/* 443 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 419 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -51900,8 +53588,8 @@ module.exports =
 
 	var ExecutionEnvironment = __webpack_require__(9);
 
-	var createArrayFromMixed = __webpack_require__(442);
-	var getMarkupWrap = __webpack_require__(444);
+	var createArrayFromMixed = __webpack_require__(418);
+	var getMarkupWrap = __webpack_require__(420);
 	var invariant = __webpack_require__(3);
 
 	/**
@@ -51967,9 +53655,9 @@ module.exports =
 
 	module.exports = createNodesFromMarkup;
 
-/***/ },
-/* 444 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 420 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52066,9 +53754,9 @@ module.exports =
 
 	module.exports = getMarkupWrap;
 
-/***/ },
-/* 445 */
-/***/ function(module, exports) {
+/***/ }),
+/* 421 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -52095,10 +53783,10 @@ module.exports =
 	 */
 
 	function getUnboundedScrollPosition(scrollable) {
-	  if (scrollable === window) {
+	  if (scrollable.Window && scrollable instanceof scrollable.Window) {
 	    return {
-	      x: window.pageXOffset || document.documentElement.scrollLeft,
-	      y: window.pageYOffset || document.documentElement.scrollTop
+	      x: scrollable.pageXOffset || scrollable.document.documentElement.scrollLeft,
+	      y: scrollable.pageYOffset || scrollable.document.documentElement.scrollTop
 	    };
 	  }
 	  return {
@@ -52109,9 +53797,9 @@ module.exports =
 
 	module.exports = getUnboundedScrollPosition;
 
-/***/ },
-/* 446 */
-/***/ function(module, exports) {
+/***/ }),
+/* 422 */
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -52146,9 +53834,9 @@ module.exports =
 
 	module.exports = hyphenate;
 
-/***/ },
-/* 447 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 423 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -52163,7 +53851,7 @@ module.exports =
 
 	'use strict';
 
-	var hyphenate = __webpack_require__(446);
+	var hyphenate = __webpack_require__(422);
 
 	var msPattern = /^ms-/;
 
@@ -52189,9 +53877,9 @@ module.exports =
 
 	module.exports = hyphenateStyleName;
 
-/***/ },
-/* 448 */
-/***/ function(module, exports) {
+/***/ }),
+/* 424 */
+/***/ (function(module, exports) {
 
 	'use strict';
 
@@ -52211,14 +53899,16 @@ module.exports =
 	 * @return {boolean} Whether or not the object is a DOM node.
 	 */
 	function isNode(object) {
-	  return !!(object && (typeof Node === 'function' ? object instanceof Node : typeof object === 'object' && typeof object.nodeType === 'number' && typeof object.nodeName === 'string'));
+	  var doc = object ? object.ownerDocument || object : document;
+	  var defaultView = doc.defaultView || window;
+	  return !!(object && (typeof defaultView.Node === 'function' ? object instanceof defaultView.Node : typeof object === 'object' && typeof object.nodeType === 'number' && typeof object.nodeName === 'string'));
 	}
 
 	module.exports = isNode;
 
-/***/ },
-/* 449 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 425 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52233,7 +53923,7 @@ module.exports =
 	 * @typechecks
 	 */
 
-	var isNode = __webpack_require__(448);
+	var isNode = __webpack_require__(424);
 
 	/**
 	 * @param {*} object The object to check.
@@ -52245,9 +53935,9 @@ module.exports =
 
 	module.exports = isTextNode;
 
-/***/ },
-/* 450 */
-/***/ function(module, exports) {
+/***/ }),
+/* 426 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -52279,9 +53969,9 @@ module.exports =
 
 	module.exports = memoizeStringOnly;
 
-/***/ },
-/* 451 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 427 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright (c) 2013-present, Facebook, Inc.
@@ -52306,9 +53996,9 @@ module.exports =
 
 	module.exports = performance || {};
 
-/***/ },
-/* 452 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 428 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52323,7 +54013,7 @@ module.exports =
 	 * @typechecks
 	 */
 
-	var performance = __webpack_require__(451);
+	var performance = __webpack_require__(427);
 
 	var performanceNow;
 
@@ -52344,33 +54034,33 @@ module.exports =
 
 	module.exports = performanceNow;
 
-/***/ },
-/* 453 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 429 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	module.exports = __webpack_require__.p + "dec21930a1a4f59520b5c55bff21dc6f.svg";
 
-/***/ },
-/* 454 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 430 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	module.exports = __webpack_require__.p + "15998c6f72bff817a85028b881f75163.svg";
 
-/***/ },
-/* 455 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 431 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	module.exports = __webpack_require__.p + "6bc5d8cf78d442a984e70195db059b69.svg";
 
-/***/ },
-/* 456 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 432 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	module.exports = __webpack_require__.p + "cd0bb358c45b584743d8ce4991777c42.svg";
 
-/***/ },
-/* 457 */
-/***/ function(module, exports) {
+/***/ }),
+/* 433 */
+/***/ (function(module, exports) {
 
 	"use strict";
 
@@ -52431,9 +54121,9 @@ module.exports =
 	  next();
 	}
 
-/***/ },
-/* 458 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 434 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52445,16 +54135,16 @@ module.exports =
 
 	var _deprecate2 = _interopRequireDefault(_deprecate);
 
-	var _useBeforeUnload = __webpack_require__(201);
+	var _useBeforeUnload = __webpack_require__(205);
 
 	var _useBeforeUnload2 = _interopRequireDefault(_useBeforeUnload);
 
 	exports['default'] = _deprecate2['default'](_useBeforeUnload2['default'], 'enableBeforeUnload is deprecated, use useBeforeUnload instead');
 	module.exports = exports['default'];
 
-/***/ },
-/* 459 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 435 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52466,16 +54156,16 @@ module.exports =
 
 	var _deprecate2 = _interopRequireDefault(_deprecate);
 
-	var _useQueries = __webpack_require__(29);
+	var _useQueries = __webpack_require__(28);
 
 	var _useQueries2 = _interopRequireDefault(_useQueries);
 
 	exports['default'] = _deprecate2['default'](_useQueries2['default'], 'enableQueries is deprecated, use useQueries instead');
 	module.exports = exports['default'];
 
-/***/ },
-/* 460 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 436 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -52487,41 +54177,41 @@ module.exports =
 
 	var _deprecate2 = _interopRequireDefault(_deprecate);
 
-	var _createLocation2 = __webpack_require__(199);
+	var _createLocation2 = __webpack_require__(203);
 
 	var _createLocation3 = _interopRequireDefault(_createLocation2);
 
-	var _createBrowserHistory = __webpack_require__(196);
+	var _createBrowserHistory = __webpack_require__(200);
 
 	var _createBrowserHistory2 = _interopRequireDefault(_createBrowserHistory);
 
 	exports.createHistory = _createBrowserHistory2['default'];
 
-	var _createHashHistory2 = __webpack_require__(161);
+	var _createHashHistory2 = __webpack_require__(169);
 
 	var _createHashHistory3 = _interopRequireDefault(_createHashHistory2);
 
 	exports.createHashHistory = _createHashHistory3['default'];
 
-	var _createMemoryHistory2 = __webpack_require__(200);
+	var _createMemoryHistory2 = __webpack_require__(204);
 
 	var _createMemoryHistory3 = _interopRequireDefault(_createMemoryHistory2);
 
 	exports.createMemoryHistory = _createMemoryHistory3['default'];
 
-	var _useBasename2 = __webpack_require__(163);
+	var _useBasename2 = __webpack_require__(171);
 
 	var _useBasename3 = _interopRequireDefault(_useBasename2);
 
 	exports.useBasename = _useBasename3['default'];
 
-	var _useBeforeUnload2 = __webpack_require__(201);
+	var _useBeforeUnload2 = __webpack_require__(205);
 
 	var _useBeforeUnload3 = _interopRequireDefault(_useBeforeUnload2);
 
 	exports.useBeforeUnload = _useBeforeUnload3['default'];
 
-	var _useQueries2 = __webpack_require__(29);
+	var _useQueries2 = __webpack_require__(28);
 
 	var _useQueries3 = _interopRequireDefault(_useQueries2);
 
@@ -52535,13 +54225,13 @@ module.exports =
 
 	// deprecated
 
-	var _enableBeforeUnload2 = __webpack_require__(458);
+	var _enableBeforeUnload2 = __webpack_require__(434);
 
 	var _enableBeforeUnload3 = _interopRequireDefault(_enableBeforeUnload2);
 
 	exports.enableBeforeUnload = _enableBeforeUnload3['default'];
 
-	var _enableQueries2 = __webpack_require__(459);
+	var _enableQueries2 = __webpack_require__(435);
 
 	var _enableQueries3 = _interopRequireDefault(_enableQueries2);
 
@@ -52549,9 +54239,9 @@ module.exports =
 	var createLocation = _deprecate2['default'](_createLocation3['default'], 'Using createLocation without a history instance is deprecated; please use history.createLocation instead');
 	exports.createLocation = createLocation;
 
-/***/ },
-/* 461 */
-/***/ function(module, exports) {
+/***/ }),
+/* 437 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2015, Yahoo! Inc.
@@ -52605,9 +54295,9 @@ module.exports =
 	};
 
 
-/***/ },
-/* 462 */
-/***/ function(module, exports) {
+/***/ }),
+/* 438 */
+/***/ (function(module, exports) {
 
 	module.exports = [
 		{
@@ -52900,9 +54590,9 @@ module.exports =
 		}
 	];
 
-/***/ },
-/* 463 */
-/***/ function(module, exports) {
+/***/ }),
+/* 439 */
+/***/ (function(module, exports) {
 
 	/**
 	 * A specialized version of `_.map` for arrays without support for iteratee
@@ -52927,9 +54617,9 @@ module.exports =
 	module.exports = arrayMap;
 
 
-/***/ },
-/* 464 */
-/***/ function(module, exports) {
+/***/ }),
+/* 440 */
+/***/ (function(module, exports) {
 
 	/**
 	 * The base implementation of `_.clamp` which doesn't coerce arguments.
@@ -52955,9 +54645,9 @@ module.exports =
 	module.exports = baseClamp;
 
 
-/***/ },
-/* 465 */
-/***/ function(module, exports) {
+/***/ }),
+/* 441 */
+/***/ (function(module, exports) {
 
 	/** Detect free variable `global` from Node.js. */
 	var freeGlobal = typeof global == 'object' && global && global.Object === Object && global;
@@ -52965,11 +54655,11 @@ module.exports =
 	module.exports = freeGlobal;
 
 
-/***/ },
-/* 466 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 442 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var Symbol = __webpack_require__(164);
+	var Symbol = __webpack_require__(172);
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -53017,9 +54707,9 @@ module.exports =
 	module.exports = getRawTag;
 
 
-/***/ },
-/* 467 */
-/***/ function(module, exports) {
+/***/ }),
+/* 443 */
+/***/ (function(module, exports) {
 
 	/** Used for built-in method references. */
 	var objectProto = Object.prototype;
@@ -53045,11 +54735,11 @@ module.exports =
 	module.exports = objectToString;
 
 
-/***/ },
-/* 468 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 444 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var freeGlobal = __webpack_require__(465);
+	var freeGlobal = __webpack_require__(441);
 
 	/** Detect free variable `self`. */
 	var freeSelf = typeof self == 'object' && self && self.Object === Object && self;
@@ -53060,9 +54750,9 @@ module.exports =
 	module.exports = root;
 
 
-/***/ },
-/* 469 */
-/***/ function(module, exports) {
+/***/ }),
+/* 445 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Checks if `value` is classified as an `Array` object.
@@ -53092,12 +54782,12 @@ module.exports =
 	module.exports = isArray;
 
 
-/***/ },
-/* 470 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 446 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var baseGetTag = __webpack_require__(324),
-	    isObject = __webpack_require__(326);
+	var baseGetTag = __webpack_require__(294),
+	    isObject = __webpack_require__(296);
 
 	/** `Object#toString` result references. */
 	var asyncTag = '[object AsyncFunction]',
@@ -53135,9 +54825,9 @@ module.exports =
 	module.exports = isFunction;
 
 
-/***/ },
-/* 471 */
-/***/ function(module, exports) {
+/***/ }),
+/* 447 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Checks if `value` is object-like. A value is object-like if it's not `null`
@@ -53170,14 +54860,14 @@ module.exports =
 	module.exports = isObjectLike;
 
 
-/***/ },
-/* 472 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 448 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var baseClamp = __webpack_require__(464),
-	    baseToString = __webpack_require__(325),
-	    toInteger = __webpack_require__(474),
-	    toString = __webpack_require__(476);
+	var baseClamp = __webpack_require__(440),
+	    baseToString = __webpack_require__(295),
+	    toInteger = __webpack_require__(450),
+	    toString = __webpack_require__(452);
 
 	/**
 	 * Checks if `string` starts with the given target string.
@@ -53215,11 +54905,11 @@ module.exports =
 	module.exports = startsWith;
 
 
-/***/ },
-/* 473 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 449 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var toNumber = __webpack_require__(475);
+	var toNumber = __webpack_require__(451);
 
 	/** Used as references for various `Number` constants. */
 	var INFINITY = 1 / 0,
@@ -53263,11 +54953,11 @@ module.exports =
 	module.exports = toFinite;
 
 
-/***/ },
-/* 474 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 450 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var toFinite = __webpack_require__(473);
+	var toFinite = __webpack_require__(449);
 
 	/**
 	 * Converts `value` to an integer.
@@ -53305,12 +54995,12 @@ module.exports =
 	module.exports = toInteger;
 
 
-/***/ },
-/* 475 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 451 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var isObject = __webpack_require__(326),
-	    isSymbol = __webpack_require__(327);
+	var isObject = __webpack_require__(296),
+	    isSymbol = __webpack_require__(297);
 
 	/** Used as references for various `Number` constants. */
 	var NAN = 0 / 0;
@@ -53377,11 +55067,11 @@ module.exports =
 	module.exports = toNumber;
 
 
-/***/ },
-/* 476 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 452 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var baseToString = __webpack_require__(325);
+	var baseToString = __webpack_require__(295);
 
 	/**
 	 * Converts `value` to a string. An empty string is returned for `null`
@@ -53411,9 +55101,9 @@ module.exports =
 	module.exports = toString;
 
 
-/***/ },
-/* 477 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 453 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * marked - a markdown parser
@@ -54703,227 +56393,241 @@ module.exports =
 	}());
 
 
-/***/ },
-/* 478 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 454 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	var map = {
 		"./af": 43,
 		"./af.js": 43,
-		"./ar": 49,
+		"./ar": 50,
 		"./ar-dz": 44,
 		"./ar-dz.js": 44,
-		"./ar-ly": 45,
-		"./ar-ly.js": 45,
-		"./ar-ma": 46,
-		"./ar-ma.js": 46,
-		"./ar-sa": 47,
-		"./ar-sa.js": 47,
-		"./ar-tn": 48,
-		"./ar-tn.js": 48,
-		"./ar.js": 49,
-		"./az": 50,
-		"./az.js": 50,
-		"./be": 51,
-		"./be.js": 51,
-		"./bg": 52,
-		"./bg.js": 52,
-		"./bn": 53,
-		"./bn.js": 53,
-		"./bo": 54,
-		"./bo.js": 54,
-		"./br": 55,
-		"./br.js": 55,
-		"./bs": 56,
-		"./bs.js": 56,
-		"./ca": 57,
-		"./ca.js": 57,
-		"./cs": 58,
-		"./cs.js": 58,
-		"./cv": 59,
-		"./cv.js": 59,
-		"./cy": 60,
-		"./cy.js": 60,
-		"./da": 61,
-		"./da.js": 61,
-		"./de": 63,
-		"./de-at": 62,
-		"./de-at.js": 62,
-		"./de.js": 63,
-		"./dv": 64,
-		"./dv.js": 64,
-		"./el": 65,
-		"./el.js": 65,
-		"./en-au": 66,
-		"./en-au.js": 66,
-		"./en-ca": 67,
-		"./en-ca.js": 67,
-		"./en-gb": 68,
-		"./en-gb.js": 68,
-		"./en-ie": 69,
-		"./en-ie.js": 69,
-		"./en-nz": 70,
-		"./en-nz.js": 70,
-		"./eo": 71,
-		"./eo.js": 71,
-		"./es": 73,
-		"./es-do": 72,
-		"./es-do.js": 72,
-		"./es.js": 73,
-		"./et": 74,
-		"./et.js": 74,
-		"./eu": 75,
-		"./eu.js": 75,
-		"./fa": 76,
-		"./fa.js": 76,
-		"./fi": 77,
-		"./fi.js": 77,
-		"./fo": 78,
-		"./fo.js": 78,
-		"./fr": 81,
-		"./fr-ca": 79,
-		"./fr-ca.js": 79,
-		"./fr-ch": 80,
-		"./fr-ch.js": 80,
-		"./fr.js": 81,
-		"./fy": 82,
-		"./fy.js": 82,
-		"./gd": 83,
-		"./gd.js": 83,
-		"./gl": 84,
-		"./gl.js": 84,
-		"./he": 85,
-		"./he.js": 85,
-		"./hi": 86,
-		"./hi.js": 86,
-		"./hr": 87,
-		"./hr.js": 87,
-		"./hu": 88,
-		"./hu.js": 88,
-		"./hy-am": 89,
-		"./hy-am.js": 89,
-		"./id": 90,
-		"./id.js": 90,
-		"./is": 91,
-		"./is.js": 91,
-		"./it": 92,
-		"./it.js": 92,
-		"./ja": 93,
-		"./ja.js": 93,
-		"./jv": 94,
-		"./jv.js": 94,
-		"./ka": 95,
-		"./ka.js": 95,
-		"./kk": 96,
-		"./kk.js": 96,
-		"./km": 97,
-		"./km.js": 97,
-		"./ko": 98,
-		"./ko.js": 98,
-		"./ky": 99,
-		"./ky.js": 99,
-		"./lb": 100,
-		"./lb.js": 100,
-		"./lo": 101,
-		"./lo.js": 101,
-		"./lt": 102,
-		"./lt.js": 102,
-		"./lv": 103,
-		"./lv.js": 103,
-		"./me": 104,
-		"./me.js": 104,
-		"./mi": 105,
-		"./mi.js": 105,
-		"./mk": 106,
-		"./mk.js": 106,
-		"./ml": 107,
-		"./ml.js": 107,
-		"./mr": 108,
-		"./mr.js": 108,
-		"./ms": 110,
-		"./ms-my": 109,
-		"./ms-my.js": 109,
-		"./ms.js": 110,
-		"./my": 111,
-		"./my.js": 111,
-		"./nb": 112,
-		"./nb.js": 112,
-		"./ne": 113,
-		"./ne.js": 113,
-		"./nl": 115,
-		"./nl-be": 114,
-		"./nl-be.js": 114,
-		"./nl.js": 115,
-		"./nn": 116,
-		"./nn.js": 116,
-		"./pa-in": 117,
-		"./pa-in.js": 117,
-		"./pl": 118,
-		"./pl.js": 118,
-		"./pt": 120,
-		"./pt-br": 119,
-		"./pt-br.js": 119,
-		"./pt.js": 120,
-		"./ro": 121,
-		"./ro.js": 121,
-		"./ru": 122,
-		"./ru.js": 122,
-		"./se": 123,
-		"./se.js": 123,
-		"./si": 124,
-		"./si.js": 124,
-		"./sk": 125,
-		"./sk.js": 125,
-		"./sl": 126,
-		"./sl.js": 126,
-		"./sq": 127,
-		"./sq.js": 127,
-		"./sr": 129,
-		"./sr-cyrl": 128,
-		"./sr-cyrl.js": 128,
-		"./sr.js": 129,
-		"./ss": 130,
-		"./ss.js": 130,
-		"./sv": 131,
-		"./sv.js": 131,
-		"./sw": 132,
-		"./sw.js": 132,
-		"./ta": 133,
-		"./ta.js": 133,
-		"./te": 134,
-		"./te.js": 134,
-		"./tet": 135,
-		"./tet.js": 135,
-		"./th": 136,
-		"./th.js": 136,
-		"./tl-ph": 137,
-		"./tl-ph.js": 137,
-		"./tlh": 138,
-		"./tlh.js": 138,
-		"./tr": 139,
-		"./tr.js": 139,
-		"./tzl": 140,
-		"./tzl.js": 140,
-		"./tzm": 142,
-		"./tzm-latn": 141,
-		"./tzm-latn.js": 141,
-		"./tzm.js": 142,
-		"./uk": 143,
-		"./uk.js": 143,
-		"./uz": 144,
-		"./uz.js": 144,
-		"./vi": 145,
-		"./vi.js": 145,
-		"./x-pseudo": 146,
-		"./x-pseudo.js": 146,
-		"./yo": 147,
-		"./yo.js": 147,
-		"./zh-cn": 148,
-		"./zh-cn.js": 148,
-		"./zh-hk": 149,
-		"./zh-hk.js": 149,
-		"./zh-tw": 150,
-		"./zh-tw.js": 150
+		"./ar-kw": 45,
+		"./ar-kw.js": 45,
+		"./ar-ly": 46,
+		"./ar-ly.js": 46,
+		"./ar-ma": 47,
+		"./ar-ma.js": 47,
+		"./ar-sa": 48,
+		"./ar-sa.js": 48,
+		"./ar-tn": 49,
+		"./ar-tn.js": 49,
+		"./ar.js": 50,
+		"./az": 51,
+		"./az.js": 51,
+		"./be": 52,
+		"./be.js": 52,
+		"./bg": 53,
+		"./bg.js": 53,
+		"./bn": 54,
+		"./bn.js": 54,
+		"./bo": 55,
+		"./bo.js": 55,
+		"./br": 56,
+		"./br.js": 56,
+		"./bs": 57,
+		"./bs.js": 57,
+		"./ca": 58,
+		"./ca.js": 58,
+		"./cs": 59,
+		"./cs.js": 59,
+		"./cv": 60,
+		"./cv.js": 60,
+		"./cy": 61,
+		"./cy.js": 61,
+		"./da": 62,
+		"./da.js": 62,
+		"./de": 65,
+		"./de-at": 63,
+		"./de-at.js": 63,
+		"./de-ch": 64,
+		"./de-ch.js": 64,
+		"./de.js": 65,
+		"./dv": 66,
+		"./dv.js": 66,
+		"./el": 67,
+		"./el.js": 67,
+		"./en-au": 68,
+		"./en-au.js": 68,
+		"./en-ca": 69,
+		"./en-ca.js": 69,
+		"./en-gb": 70,
+		"./en-gb.js": 70,
+		"./en-ie": 71,
+		"./en-ie.js": 71,
+		"./en-nz": 72,
+		"./en-nz.js": 72,
+		"./eo": 73,
+		"./eo.js": 73,
+		"./es": 75,
+		"./es-do": 74,
+		"./es-do.js": 74,
+		"./es.js": 75,
+		"./et": 76,
+		"./et.js": 76,
+		"./eu": 77,
+		"./eu.js": 77,
+		"./fa": 78,
+		"./fa.js": 78,
+		"./fi": 79,
+		"./fi.js": 79,
+		"./fo": 80,
+		"./fo.js": 80,
+		"./fr": 83,
+		"./fr-ca": 81,
+		"./fr-ca.js": 81,
+		"./fr-ch": 82,
+		"./fr-ch.js": 82,
+		"./fr.js": 83,
+		"./fy": 84,
+		"./fy.js": 84,
+		"./gd": 85,
+		"./gd.js": 85,
+		"./gl": 86,
+		"./gl.js": 86,
+		"./gom-latn": 87,
+		"./gom-latn.js": 87,
+		"./he": 88,
+		"./he.js": 88,
+		"./hi": 89,
+		"./hi.js": 89,
+		"./hr": 90,
+		"./hr.js": 90,
+		"./hu": 91,
+		"./hu.js": 91,
+		"./hy-am": 92,
+		"./hy-am.js": 92,
+		"./id": 93,
+		"./id.js": 93,
+		"./is": 94,
+		"./is.js": 94,
+		"./it": 95,
+		"./it.js": 95,
+		"./ja": 96,
+		"./ja.js": 96,
+		"./jv": 97,
+		"./jv.js": 97,
+		"./ka": 98,
+		"./ka.js": 98,
+		"./kk": 99,
+		"./kk.js": 99,
+		"./km": 100,
+		"./km.js": 100,
+		"./kn": 101,
+		"./kn.js": 101,
+		"./ko": 102,
+		"./ko.js": 102,
+		"./ky": 103,
+		"./ky.js": 103,
+		"./lb": 104,
+		"./lb.js": 104,
+		"./lo": 105,
+		"./lo.js": 105,
+		"./lt": 106,
+		"./lt.js": 106,
+		"./lv": 107,
+		"./lv.js": 107,
+		"./me": 108,
+		"./me.js": 108,
+		"./mi": 109,
+		"./mi.js": 109,
+		"./mk": 110,
+		"./mk.js": 110,
+		"./ml": 111,
+		"./ml.js": 111,
+		"./mr": 112,
+		"./mr.js": 112,
+		"./ms": 114,
+		"./ms-my": 113,
+		"./ms-my.js": 113,
+		"./ms.js": 114,
+		"./my": 115,
+		"./my.js": 115,
+		"./nb": 116,
+		"./nb.js": 116,
+		"./ne": 117,
+		"./ne.js": 117,
+		"./nl": 119,
+		"./nl-be": 118,
+		"./nl-be.js": 118,
+		"./nl.js": 119,
+		"./nn": 120,
+		"./nn.js": 120,
+		"./pa-in": 121,
+		"./pa-in.js": 121,
+		"./pl": 122,
+		"./pl.js": 122,
+		"./pt": 124,
+		"./pt-br": 123,
+		"./pt-br.js": 123,
+		"./pt.js": 124,
+		"./ro": 125,
+		"./ro.js": 125,
+		"./ru": 126,
+		"./ru.js": 126,
+		"./sd": 127,
+		"./sd.js": 127,
+		"./se": 128,
+		"./se.js": 128,
+		"./si": 129,
+		"./si.js": 129,
+		"./sk": 130,
+		"./sk.js": 130,
+		"./sl": 131,
+		"./sl.js": 131,
+		"./sq": 132,
+		"./sq.js": 132,
+		"./sr": 134,
+		"./sr-cyrl": 133,
+		"./sr-cyrl.js": 133,
+		"./sr.js": 134,
+		"./ss": 135,
+		"./ss.js": 135,
+		"./sv": 136,
+		"./sv.js": 136,
+		"./sw": 137,
+		"./sw.js": 137,
+		"./ta": 138,
+		"./ta.js": 138,
+		"./te": 139,
+		"./te.js": 139,
+		"./tet": 140,
+		"./tet.js": 140,
+		"./th": 141,
+		"./th.js": 141,
+		"./tl-ph": 142,
+		"./tl-ph.js": 142,
+		"./tlh": 143,
+		"./tlh.js": 143,
+		"./tr": 144,
+		"./tr.js": 144,
+		"./tzl": 145,
+		"./tzl.js": 145,
+		"./tzm": 147,
+		"./tzm-latn": 146,
+		"./tzm-latn.js": 146,
+		"./tzm.js": 147,
+		"./uk": 148,
+		"./uk.js": 148,
+		"./ur": 149,
+		"./ur.js": 149,
+		"./uz": 151,
+		"./uz-latn": 150,
+		"./uz-latn.js": 150,
+		"./uz.js": 151,
+		"./vi": 152,
+		"./vi.js": 152,
+		"./x-pseudo": 153,
+		"./x-pseudo.js": 153,
+		"./yo": 154,
+		"./yo.js": 154,
+		"./zh-cn": 155,
+		"./zh-cn.js": 155,
+		"./zh-hk": 156,
+		"./zh-hk.js": 156,
+		"./zh-tw": 157,
+		"./zh-tw.js": 157
 	};
 	function webpackContext(req) {
 		return __webpack_require__(webpackContextResolve(req));
@@ -54936,14 +56640,14 @@ module.exports =
 	};
 	webpackContext.resolve = webpackContextResolve;
 	module.exports = webpackContext;
-	webpackContext.id = 478;
+	webpackContext.id = 454;
 
 
-/***/ },
-/* 479 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 455 */
+/***/ (function(module, exports, __webpack_require__) {
 
-	var Prism = __webpack_require__(328);
+	var Prism = __webpack_require__(298);
 	Prism.languages.clike = {
 		'comment': [
 			{
@@ -60252,12 +61956,597 @@ module.exports =
 	module.exports = Prism.languages;
 
 
-/***/ },
-/* 480 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 456 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 */
 
 	'use strict';
-	var strictUriEncode = __webpack_require__(581);
+
+	if (true) {
+	  var invariant = __webpack_require__(3);
+	  var warning = __webpack_require__(4);
+	  var ReactPropTypesSecret = __webpack_require__(300);
+	  var loggedTypeFailures = {};
+	}
+
+	/**
+	 * Assert that the values match with the type specs.
+	 * Error messages are memorized and will only be shown once.
+	 *
+	 * @param {object} typeSpecs Map of name to a ReactPropType
+	 * @param {object} values Runtime values that need to be type-checked
+	 * @param {string} location e.g. "prop", "context", "child context"
+	 * @param {string} componentName Name of the component for error messages.
+	 * @param {?Function} getStack Returns the component stack.
+	 * @private
+	 */
+	function checkPropTypes(typeSpecs, values, location, componentName, getStack) {
+	  if (true) {
+	    for (var typeSpecName in typeSpecs) {
+	      if (typeSpecs.hasOwnProperty(typeSpecName)) {
+	        var error;
+	        // Prop type validation may throw. In case they do, we don't want to
+	        // fail the render phase where it didn't fail before. So we log it.
+	        // After these have been cleaned up, we'll let them throw.
+	        try {
+	          // This is intentionally an invariant that gets caught. It's the same
+	          // behavior as without this statement except with a better message.
+	          invariant(typeof typeSpecs[typeSpecName] === 'function', '%s: %s type `%s` is invalid; it must be a function, usually from ' + 'React.PropTypes.', componentName || 'React class', location, typeSpecName);
+	          error = typeSpecs[typeSpecName](values, typeSpecName, componentName, location, null, ReactPropTypesSecret);
+	        } catch (ex) {
+	          error = ex;
+	        }
+	        warning(!error || error instanceof Error, '%s: type specification of %s `%s` is invalid; the type checker ' + 'function must return `null` or an `Error` but returned a %s. ' + 'You may have forgotten to pass an argument to the type checker ' + 'creator (arrayOf, instanceOf, objectOf, oneOf, oneOfType, and ' + 'shape all require an argument).', componentName || 'React class', location, typeSpecName, typeof error);
+	        if (error instanceof Error && !(error.message in loggedTypeFailures)) {
+	          // Only monitor this failure once because there tends to be a lot of the
+	          // same error.
+	          loggedTypeFailures[error.message] = true;
+
+	          var stack = getStack ? getStack() : '';
+
+	          warning(false, 'Failed %s type: %s%s', location, error.message, stack != null ? stack : '');
+	        }
+	      }
+	    }
+	  }
+	}
+
+	module.exports = checkPropTypes;
+
+
+/***/ }),
+/* 457 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 */
+
+	'use strict';
+
+	var emptyFunction = __webpack_require__(12);
+	var invariant = __webpack_require__(3);
+	var warning = __webpack_require__(4);
+
+	var ReactPropTypesSecret = __webpack_require__(300);
+	var checkPropTypes = __webpack_require__(456);
+
+	module.exports = function(isValidElement, throwOnDirectAccess) {
+	  /* global Symbol */
+	  var ITERATOR_SYMBOL = typeof Symbol === 'function' && Symbol.iterator;
+	  var FAUX_ITERATOR_SYMBOL = '@@iterator'; // Before Symbol spec.
+
+	  /**
+	   * Returns the iterator method function contained on the iterable object.
+	   *
+	   * Be sure to invoke the function with the iterable as context:
+	   *
+	   *     var iteratorFn = getIteratorFn(myIterable);
+	   *     if (iteratorFn) {
+	   *       var iterator = iteratorFn.call(myIterable);
+	   *       ...
+	   *     }
+	   *
+	   * @param {?object} maybeIterable
+	   * @return {?function}
+	   */
+	  function getIteratorFn(maybeIterable) {
+	    var iteratorFn = maybeIterable && (ITERATOR_SYMBOL && maybeIterable[ITERATOR_SYMBOL] || maybeIterable[FAUX_ITERATOR_SYMBOL]);
+	    if (typeof iteratorFn === 'function') {
+	      return iteratorFn;
+	    }
+	  }
+
+	  /**
+	   * Collection of methods that allow declaration and validation of props that are
+	   * supplied to React components. Example usage:
+	   *
+	   *   var Props = require('ReactPropTypes');
+	   *   var MyArticle = React.createClass({
+	   *     propTypes: {
+	   *       // An optional string prop named "description".
+	   *       description: Props.string,
+	   *
+	   *       // A required enum prop named "category".
+	   *       category: Props.oneOf(['News','Photos']).isRequired,
+	   *
+	   *       // A prop named "dialog" that requires an instance of Dialog.
+	   *       dialog: Props.instanceOf(Dialog).isRequired
+	   *     },
+	   *     render: function() { ... }
+	   *   });
+	   *
+	   * A more formal specification of how these methods are used:
+	   *
+	   *   type := array|bool|func|object|number|string|oneOf([...])|instanceOf(...)
+	   *   decl := ReactPropTypes.{type}(.isRequired)?
+	   *
+	   * Each and every declaration produces a function with the same signature. This
+	   * allows the creation of custom validation functions. For example:
+	   *
+	   *  var MyLink = React.createClass({
+	   *    propTypes: {
+	   *      // An optional string or URI prop named "href".
+	   *      href: function(props, propName, componentName) {
+	   *        var propValue = props[propName];
+	   *        if (propValue != null && typeof propValue !== 'string' &&
+	   *            !(propValue instanceof URI)) {
+	   *          return new Error(
+	   *            'Expected a string or an URI for ' + propName + ' in ' +
+	   *            componentName
+	   *          );
+	   *        }
+	   *      }
+	   *    },
+	   *    render: function() {...}
+	   *  });
+	   *
+	   * @internal
+	   */
+
+	  var ANONYMOUS = '<<anonymous>>';
+
+	  // Important!
+	  // Keep this list in sync with production version in `./factoryWithThrowingShims.js`.
+	  var ReactPropTypes = {
+	    array: createPrimitiveTypeChecker('array'),
+	    bool: createPrimitiveTypeChecker('boolean'),
+	    func: createPrimitiveTypeChecker('function'),
+	    number: createPrimitiveTypeChecker('number'),
+	    object: createPrimitiveTypeChecker('object'),
+	    string: createPrimitiveTypeChecker('string'),
+	    symbol: createPrimitiveTypeChecker('symbol'),
+
+	    any: createAnyTypeChecker(),
+	    arrayOf: createArrayOfTypeChecker,
+	    element: createElementTypeChecker(),
+	    instanceOf: createInstanceTypeChecker,
+	    node: createNodeChecker(),
+	    objectOf: createObjectOfTypeChecker,
+	    oneOf: createEnumTypeChecker,
+	    oneOfType: createUnionTypeChecker,
+	    shape: createShapeTypeChecker
+	  };
+
+	  /**
+	   * inlined Object.is polyfill to avoid requiring consumers ship their own
+	   * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is
+	   */
+	  /*eslint-disable no-self-compare*/
+	  function is(x, y) {
+	    // SameValue algorithm
+	    if (x === y) {
+	      // Steps 1-5, 7-10
+	      // Steps 6.b-6.e: +0 != -0
+	      return x !== 0 || 1 / x === 1 / y;
+	    } else {
+	      // Step 6.a: NaN == NaN
+	      return x !== x && y !== y;
+	    }
+	  }
+	  /*eslint-enable no-self-compare*/
+
+	  /**
+	   * We use an Error-like object for backward compatibility as people may call
+	   * PropTypes directly and inspect their output. However, we don't use real
+	   * Errors anymore. We don't inspect their stack anyway, and creating them
+	   * is prohibitively expensive if they are created too often, such as what
+	   * happens in oneOfType() for any type before the one that matched.
+	   */
+	  function PropTypeError(message) {
+	    this.message = message;
+	    this.stack = '';
+	  }
+	  // Make `instanceof Error` still work for returned errors.
+	  PropTypeError.prototype = Error.prototype;
+
+	  function createChainableTypeChecker(validate) {
+	    if (true) {
+	      var manualPropTypeCallCache = {};
+	      var manualPropTypeWarningCount = 0;
+	    }
+	    function checkType(isRequired, props, propName, componentName, location, propFullName, secret) {
+	      componentName = componentName || ANONYMOUS;
+	      propFullName = propFullName || propName;
+
+	      if (secret !== ReactPropTypesSecret) {
+	        if (throwOnDirectAccess) {
+	          // New behavior only for users of `prop-types` package
+	          invariant(
+	            false,
+	            'Calling PropTypes validators directly is not supported by the `prop-types` package. ' +
+	            'Use `PropTypes.checkPropTypes()` to call them. ' +
+	            'Read more at http://fb.me/use-check-prop-types'
+	          );
+	        } else if (("dev") !== 'production' && typeof console !== 'undefined') {
+	          // Old behavior for people using React.PropTypes
+	          var cacheKey = componentName + ':' + propName;
+	          if (
+	            !manualPropTypeCallCache[cacheKey] &&
+	            // Avoid spamming the console because they are often not actionable except for lib authors
+	            manualPropTypeWarningCount < 3
+	          ) {
+	            warning(
+	              false,
+	              'You are manually calling a React.PropTypes validation ' +
+	              'function for the `%s` prop on `%s`. This is deprecated ' +
+	              'and will throw in the standalone `prop-types` package. ' +
+	              'You may be seeing this warning due to a third-party PropTypes ' +
+	              'library. See https://fb.me/react-warning-dont-call-proptypes ' + 'for details.',
+	              propFullName,
+	              componentName
+	            );
+	            manualPropTypeCallCache[cacheKey] = true;
+	            manualPropTypeWarningCount++;
+	          }
+	        }
+	      }
+	      if (props[propName] == null) {
+	        if (isRequired) {
+	          if (props[propName] === null) {
+	            return new PropTypeError('The ' + location + ' `' + propFullName + '` is marked as required ' + ('in `' + componentName + '`, but its value is `null`.'));
+	          }
+	          return new PropTypeError('The ' + location + ' `' + propFullName + '` is marked as required in ' + ('`' + componentName + '`, but its value is `undefined`.'));
+	        }
+	        return null;
+	      } else {
+	        return validate(props, propName, componentName, location, propFullName);
+	      }
+	    }
+
+	    var chainedCheckType = checkType.bind(null, false);
+	    chainedCheckType.isRequired = checkType.bind(null, true);
+
+	    return chainedCheckType;
+	  }
+
+	  function createPrimitiveTypeChecker(expectedType) {
+	    function validate(props, propName, componentName, location, propFullName, secret) {
+	      var propValue = props[propName];
+	      var propType = getPropType(propValue);
+	      if (propType !== expectedType) {
+	        // `propValue` being instance of, say, date/regexp, pass the 'object'
+	        // check, but we can offer a more precise error message here rather than
+	        // 'of type `object`'.
+	        var preciseType = getPreciseType(propValue);
+
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type ' + ('`' + preciseType + '` supplied to `' + componentName + '`, expected ') + ('`' + expectedType + '`.'));
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createAnyTypeChecker() {
+	    return createChainableTypeChecker(emptyFunction.thatReturnsNull);
+	  }
+
+	  function createArrayOfTypeChecker(typeChecker) {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      if (typeof typeChecker !== 'function') {
+	        return new PropTypeError('Property `' + propFullName + '` of component `' + componentName + '` has invalid PropType notation inside arrayOf.');
+	      }
+	      var propValue = props[propName];
+	      if (!Array.isArray(propValue)) {
+	        var propType = getPropType(propValue);
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected an array.'));
+	      }
+	      for (var i = 0; i < propValue.length; i++) {
+	        var error = typeChecker(propValue, i, componentName, location, propFullName + '[' + i + ']', ReactPropTypesSecret);
+	        if (error instanceof Error) {
+	          return error;
+	        }
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createElementTypeChecker() {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      var propValue = props[propName];
+	      if (!isValidElement(propValue)) {
+	        var propType = getPropType(propValue);
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected a single ReactElement.'));
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createInstanceTypeChecker(expectedClass) {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      if (!(props[propName] instanceof expectedClass)) {
+	        var expectedClassName = expectedClass.name || ANONYMOUS;
+	        var actualClassName = getClassName(props[propName]);
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type ' + ('`' + actualClassName + '` supplied to `' + componentName + '`, expected ') + ('instance of `' + expectedClassName + '`.'));
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createEnumTypeChecker(expectedValues) {
+	    if (!Array.isArray(expectedValues)) {
+	       true ? warning(false, 'Invalid argument supplied to oneOf, expected an instance of array.') : void 0;
+	      return emptyFunction.thatReturnsNull;
+	    }
+
+	    function validate(props, propName, componentName, location, propFullName) {
+	      var propValue = props[propName];
+	      for (var i = 0; i < expectedValues.length; i++) {
+	        if (is(propValue, expectedValues[i])) {
+	          return null;
+	        }
+	      }
+
+	      var valuesString = JSON.stringify(expectedValues);
+	      return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of value `' + propValue + '` ' + ('supplied to `' + componentName + '`, expected one of ' + valuesString + '.'));
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createObjectOfTypeChecker(typeChecker) {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      if (typeof typeChecker !== 'function') {
+	        return new PropTypeError('Property `' + propFullName + '` of component `' + componentName + '` has invalid PropType notation inside objectOf.');
+	      }
+	      var propValue = props[propName];
+	      var propType = getPropType(propValue);
+	      if (propType !== 'object') {
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected an object.'));
+	      }
+	      for (var key in propValue) {
+	        if (propValue.hasOwnProperty(key)) {
+	          var error = typeChecker(propValue, key, componentName, location, propFullName + '.' + key, ReactPropTypesSecret);
+	          if (error instanceof Error) {
+	            return error;
+	          }
+	        }
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createUnionTypeChecker(arrayOfTypeCheckers) {
+	    if (!Array.isArray(arrayOfTypeCheckers)) {
+	       true ? warning(false, 'Invalid argument supplied to oneOfType, expected an instance of array.') : void 0;
+	      return emptyFunction.thatReturnsNull;
+	    }
+
+	    for (var i = 0; i < arrayOfTypeCheckers.length; i++) {
+	      var checker = arrayOfTypeCheckers[i];
+	      if (typeof checker !== 'function') {
+	        warning(
+	          false,
+	          'Invalid argument supplid to oneOfType. Expected an array of check functions, but ' +
+	          'received %s at index %s.',
+	          getPostfixForTypeWarning(checker),
+	          i
+	        );
+	        return emptyFunction.thatReturnsNull;
+	      }
+	    }
+
+	    function validate(props, propName, componentName, location, propFullName) {
+	      for (var i = 0; i < arrayOfTypeCheckers.length; i++) {
+	        var checker = arrayOfTypeCheckers[i];
+	        if (checker(props, propName, componentName, location, propFullName, ReactPropTypesSecret) == null) {
+	          return null;
+	        }
+	      }
+
+	      return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` supplied to ' + ('`' + componentName + '`.'));
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createNodeChecker() {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      if (!isNode(props[propName])) {
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` supplied to ' + ('`' + componentName + '`, expected a ReactNode.'));
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function createShapeTypeChecker(shapeTypes) {
+	    function validate(props, propName, componentName, location, propFullName) {
+	      var propValue = props[propName];
+	      var propType = getPropType(propValue);
+	      if (propType !== 'object') {
+	        return new PropTypeError('Invalid ' + location + ' `' + propFullName + '` of type `' + propType + '` ' + ('supplied to `' + componentName + '`, expected `object`.'));
+	      }
+	      for (var key in shapeTypes) {
+	        var checker = shapeTypes[key];
+	        if (!checker) {
+	          continue;
+	        }
+	        var error = checker(propValue, key, componentName, location, propFullName + '.' + key, ReactPropTypesSecret);
+	        if (error) {
+	          return error;
+	        }
+	      }
+	      return null;
+	    }
+	    return createChainableTypeChecker(validate);
+	  }
+
+	  function isNode(propValue) {
+	    switch (typeof propValue) {
+	      case 'number':
+	      case 'string':
+	      case 'undefined':
+	        return true;
+	      case 'boolean':
+	        return !propValue;
+	      case 'object':
+	        if (Array.isArray(propValue)) {
+	          return propValue.every(isNode);
+	        }
+	        if (propValue === null || isValidElement(propValue)) {
+	          return true;
+	        }
+
+	        var iteratorFn = getIteratorFn(propValue);
+	        if (iteratorFn) {
+	          var iterator = iteratorFn.call(propValue);
+	          var step;
+	          if (iteratorFn !== propValue.entries) {
+	            while (!(step = iterator.next()).done) {
+	              if (!isNode(step.value)) {
+	                return false;
+	              }
+	            }
+	          } else {
+	            // Iterator will provide entry [k,v] tuples rather than values.
+	            while (!(step = iterator.next()).done) {
+	              var entry = step.value;
+	              if (entry) {
+	                if (!isNode(entry[1])) {
+	                  return false;
+	                }
+	              }
+	            }
+	          }
+	        } else {
+	          return false;
+	        }
+
+	        return true;
+	      default:
+	        return false;
+	    }
+	  }
+
+	  function isSymbol(propType, propValue) {
+	    // Native Symbol.
+	    if (propType === 'symbol') {
+	      return true;
+	    }
+
+	    // 19.4.3.5 Symbol.prototype[@@toStringTag] === 'Symbol'
+	    if (propValue['@@toStringTag'] === 'Symbol') {
+	      return true;
+	    }
+
+	    // Fallback for non-spec compliant Symbols which are polyfilled.
+	    if (typeof Symbol === 'function' && propValue instanceof Symbol) {
+	      return true;
+	    }
+
+	    return false;
+	  }
+
+	  // Equivalent of `typeof` but with special handling for array and regexp.
+	  function getPropType(propValue) {
+	    var propType = typeof propValue;
+	    if (Array.isArray(propValue)) {
+	      return 'array';
+	    }
+	    if (propValue instanceof RegExp) {
+	      // Old webkits (at least until Android 4.0) return 'function' rather than
+	      // 'object' for typeof a RegExp. We'll normalize this here so that /bla/
+	      // passes PropTypes.object.
+	      return 'object';
+	    }
+	    if (isSymbol(propType, propValue)) {
+	      return 'symbol';
+	    }
+	    return propType;
+	  }
+
+	  // This handles more types than `getPropType`. Only used for error messages.
+	  // See `createPrimitiveTypeChecker`.
+	  function getPreciseType(propValue) {
+	    if (typeof propValue === 'undefined' || propValue === null) {
+	      return '' + propValue;
+	    }
+	    var propType = getPropType(propValue);
+	    if (propType === 'object') {
+	      if (propValue instanceof Date) {
+	        return 'date';
+	      } else if (propValue instanceof RegExp) {
+	        return 'regexp';
+	      }
+	    }
+	    return propType;
+	  }
+
+	  // Returns a string that is postfixed to a warning about an invalid type.
+	  // For example, "undefined" or "of type array"
+	  function getPostfixForTypeWarning(value) {
+	    var type = getPreciseType(value);
+	    switch (type) {
+	      case 'array':
+	      case 'object':
+	        return 'an ' + type;
+	      case 'boolean':
+	      case 'date':
+	      case 'regexp':
+	        return 'a ' + type;
+	      default:
+	        return type;
+	    }
+	  }
+
+	  // Returns class name of the object, if any.
+	  function getClassName(propValue) {
+	    if (!propValue.constructor || !propValue.constructor.name) {
+	      return ANONYMOUS;
+	    }
+	    return propValue.constructor.name;
+	  }
+
+	  ReactPropTypes.checkPropTypes = checkPropTypes;
+	  ReactPropTypes.PropTypes = ReactPropTypes;
+
+	  return ReactPropTypes;
+	};
+
+
+/***/ }),
+/* 458 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	'use strict';
+	var strictUriEncode = __webpack_require__(560);
 
 	exports.extract = function (str) {
 		return str.split('?')[1] || '';
@@ -60324,9 +62613,9 @@ module.exports =
 	};
 
 
-/***/ },
-/* 481 */
-/***/ function(module, exports) {
+/***/ }),
+/* 459 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -60402,9 +62691,9 @@ module.exports =
 
 	module.exports = ARIADOMPropertyConfig;
 
-/***/ },
-/* 482 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 460 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -60420,7 +62709,7 @@ module.exports =
 
 	var ReactDOMComponentTree = __webpack_require__(7);
 
-	var focusNode = __webpack_require__(193);
+	var focusNode = __webpack_require__(197);
 
 	var AutoFocusUtils = {
 	  focusDOMComponent: function () {
@@ -60430,9 +62719,9 @@ module.exports =
 
 	module.exports = AutoFocusUtils;
 
-/***/ },
-/* 483 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 461 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present Facebook, Inc.
@@ -60446,11 +62735,11 @@ module.exports =
 
 	'use strict';
 
-	var EventPropagators = __webpack_require__(37);
+	var EventPropagators = __webpack_require__(36);
 	var ExecutionEnvironment = __webpack_require__(9);
-	var FallbackCompositionState = __webpack_require__(489);
-	var SyntheticCompositionEvent = __webpack_require__(530);
-	var SyntheticInputEvent = __webpack_require__(533);
+	var FallbackCompositionState = __webpack_require__(467);
+	var SyntheticCompositionEvent = __webpack_require__(508);
+	var SyntheticInputEvent = __webpack_require__(511);
 
 	var END_KEYCODES = [9, 13, 27, 32]; // Tab, Return, Esc, Space
 	var START_KEYCODE = 229;
@@ -60809,7 +63098,6 @@ module.exports =
 	 * `composition` event types.
 	 */
 	var BeforeInputEventPlugin = {
-
 	  eventTypes: eventTypes,
 
 	  extractEvents: function (topLevelType, targetInst, nativeEvent, nativeEventTarget) {
@@ -60819,9 +63107,9 @@ module.exports =
 
 	module.exports = BeforeInputEventPlugin;
 
-/***/ },
-/* 484 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 462 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -60835,14 +63123,14 @@ module.exports =
 
 	'use strict';
 
-	var CSSProperty = __webpack_require__(329);
+	var CSSProperty = __webpack_require__(301);
 	var ExecutionEnvironment = __webpack_require__(9);
 	var ReactInstrumentation = __webpack_require__(13);
 
-	var camelizeStyleName = __webpack_require__(440);
-	var dangerousStyleValue = __webpack_require__(540);
-	var hyphenateStyleName = __webpack_require__(447);
-	var memoizeStringOnly = __webpack_require__(450);
+	var camelizeStyleName = __webpack_require__(416);
+	var dangerousStyleValue = __webpack_require__(518);
+	var hyphenateStyleName = __webpack_require__(423);
+	var memoizeStringOnly = __webpack_require__(426);
 	var warning = __webpack_require__(4);
 
 	var processStyleName = memoizeStringOnly(function (styleName) {
@@ -60900,7 +63188,7 @@ module.exports =
 	    }
 
 	    warnedStyleValues[value] = true;
-	     true ? warning(false, 'Style property values shouldn\'t contain a semicolon.%s ' + 'Try "%s: %s" instead.', checkRenderMessage(owner), name, value.replace(badStyleValueWithSemicolonPattern, '')) : void 0;
+	     true ? warning(false, "Style property values shouldn't contain a semicolon.%s " + 'Try "%s: %s" instead.', checkRenderMessage(owner), name, value.replace(badStyleValueWithSemicolonPattern, '')) : void 0;
 	  };
 
 	  var warnStyleValueIsNaN = function (name, value, owner) {
@@ -60950,7 +63238,6 @@ module.exports =
 	 * Operations for dealing with CSS properties.
 	 */
 	var CSSPropertyOperations = {
-
 	  /**
 	   * Serializes a mapping of style properties for use as inline styles:
 	   *
@@ -60970,13 +63257,16 @@ module.exports =
 	      if (!styles.hasOwnProperty(styleName)) {
 	        continue;
 	      }
+	      var isCustomProperty = styleName.indexOf('--') === 0;
 	      var styleValue = styles[styleName];
 	      if (true) {
-	        warnValidStyle(styleName, styleValue, component);
+	        if (!isCustomProperty) {
+	          warnValidStyle(styleName, styleValue, component);
+	        }
 	      }
 	      if (styleValue != null) {
 	        serialized += processStyleName(styleName) + ':';
-	        serialized += dangerousStyleValue(styleName, styleValue, component) + ';';
+	        serialized += dangerousStyleValue(styleName, styleValue, component, isCustomProperty) + ';';
 	      }
 	    }
 	    return serialized || null;
@@ -61004,14 +63294,19 @@ module.exports =
 	      if (!styles.hasOwnProperty(styleName)) {
 	        continue;
 	      }
+	      var isCustomProperty = styleName.indexOf('--') === 0;
 	      if (true) {
-	        warnValidStyle(styleName, styles[styleName], component);
+	        if (!isCustomProperty) {
+	          warnValidStyle(styleName, styles[styleName], component);
+	        }
 	      }
-	      var styleValue = dangerousStyleValue(styleName, styles[styleName], component);
+	      var styleValue = dangerousStyleValue(styleName, styles[styleName], component, isCustomProperty);
 	      if (styleName === 'float' || styleName === 'cssFloat') {
 	        styleName = styleFloatAccessor;
 	      }
-	      if (styleValue) {
+	      if (isCustomProperty) {
+	        style.setProperty(styleName, styleValue);
+	      } else if (styleValue) {
 	        style[styleName] = styleValue;
 	      } else {
 	        var expansion = hasShorthandPropertyBug && CSSProperty.shorthandPropertyExpansions[styleName];
@@ -61027,14 +63322,13 @@ module.exports =
 	      }
 	    }
 	  }
-
 	};
 
 	module.exports = CSSPropertyOperations;
 
-/***/ },
-/* 485 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 463 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61048,16 +63342,17 @@ module.exports =
 
 	'use strict';
 
-	var EventPluginHub = __webpack_require__(36);
-	var EventPropagators = __webpack_require__(37);
+	var EventPluginHub = __webpack_require__(35);
+	var EventPropagators = __webpack_require__(36);
 	var ExecutionEnvironment = __webpack_require__(9);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactUpdates = __webpack_require__(15);
 	var SyntheticEvent = __webpack_require__(16);
 
-	var getEventTarget = __webpack_require__(178);
-	var isEventSupported = __webpack_require__(179);
-	var isTextInputElement = __webpack_require__(346);
+	var inputValueTracking = __webpack_require__(317);
+	var getEventTarget = __webpack_require__(186);
+	var isEventSupported = __webpack_require__(187);
+	var isTextInputElement = __webpack_require__(319);
 
 	var eventTypes = {
 	  change: {
@@ -61069,13 +63364,17 @@ module.exports =
 	  }
 	};
 
+	function createAndAccumulateChangeEvent(inst, nativeEvent, target) {
+	  var event = SyntheticEvent.getPooled(eventTypes.change, inst, nativeEvent, target);
+	  event.type = 'change';
+	  EventPropagators.accumulateTwoPhaseDispatches(event);
+	  return event;
+	}
 	/**
 	 * For IE shims
 	 */
 	var activeElement = null;
 	var activeElementInst = null;
-	var activeElementValue = null;
-	var activeElementValueProp = null;
 
 	/**
 	 * SECTION: handle `change` event
@@ -61092,8 +63391,7 @@ module.exports =
 	}
 
 	function manualDispatchChangeEvent(nativeEvent) {
-	  var event = SyntheticEvent.getPooled(eventTypes.change, activeElementInst, nativeEvent, getEventTarget(nativeEvent));
-	  EventPropagators.accumulateTwoPhaseDispatches(event);
+	  var event = createAndAccumulateChangeEvent(activeElementInst, nativeEvent, getEventTarget(nativeEvent));
 
 	  // If change and propertychange bubbled, we'd just bind to it like all the
 	  // other events and have it go through ReactBrowserEventEmitter. Since it
@@ -61129,11 +63427,21 @@ module.exports =
 	  activeElementInst = null;
 	}
 
+	function getInstIfValueChanged(targetInst, nativeEvent) {
+	  var updated = inputValueTracking.updateValueIfChanged(targetInst);
+	  var simulated = nativeEvent.simulated === true && ChangeEventPlugin._allowSimulatedPassThrough;
+
+	  if (updated || simulated) {
+	    return targetInst;
+	  }
+	}
+
 	function getTargetInstForChangeEvent(topLevelType, targetInst) {
 	  if (topLevelType === 'topChange') {
 	    return targetInst;
 	  }
 	}
+
 	function handleEventsForChangeEventIE8(topLevelType, target, targetInst) {
 	  if (topLevelType === 'topFocus') {
 	    // stopWatching() should be a noop here but we call it just in case we
@@ -61152,105 +63460,54 @@ module.exports =
 	if (ExecutionEnvironment.canUseDOM) {
 	  // IE9 claims to support the input event but fails to trigger it when
 	  // deleting text, so we ignore its input events.
-	  // IE10+ fire input events to often, such when a placeholder
-	  // changes or when an input with a placeholder is focused.
-	  isInputEventSupported = isEventSupported('input') && (!document.documentMode || document.documentMode > 11);
+
+	  isInputEventSupported = isEventSupported('input') && (!('documentMode' in document) || document.documentMode > 9);
 	}
 
 	/**
-	 * (For IE <=11) Replacement getter/setter for the `value` property that gets
-	 * set on the active element.
-	 */
-	var newValueProp = {
-	  get: function () {
-	    return activeElementValueProp.get.call(this);
-	  },
-	  set: function (val) {
-	    // Cast to a string so we can do equality checks.
-	    activeElementValue = '' + val;
-	    activeElementValueProp.set.call(this, val);
-	  }
-	};
-
-	/**
-	 * (For IE <=11) Starts tracking propertychange events on the passed-in element
+	 * (For IE <=9) Starts tracking propertychange events on the passed-in element
 	 * and override the value property so that we can distinguish user events from
 	 * value changes in JS.
 	 */
 	function startWatchingForValueChange(target, targetInst) {
 	  activeElement = target;
 	  activeElementInst = targetInst;
-	  activeElementValue = target.value;
-	  activeElementValueProp = Object.getOwnPropertyDescriptor(target.constructor.prototype, 'value');
-
-	  // Not guarded in a canDefineProperty check: IE8 supports defineProperty only
-	  // on DOM elements
-	  Object.defineProperty(activeElement, 'value', newValueProp);
-	  if (activeElement.attachEvent) {
-	    activeElement.attachEvent('onpropertychange', handlePropertyChange);
-	  } else {
-	    activeElement.addEventListener('propertychange', handlePropertyChange, false);
-	  }
+	  activeElement.attachEvent('onpropertychange', handlePropertyChange);
 	}
 
 	/**
-	 * (For IE <=11) Removes the event listeners from the currently-tracked element,
+	 * (For IE <=9) Removes the event listeners from the currently-tracked element,
 	 * if any exists.
 	 */
 	function stopWatchingForValueChange() {
 	  if (!activeElement) {
 	    return;
 	  }
-
-	  // delete restores the original property definition
-	  delete activeElement.value;
-
-	  if (activeElement.detachEvent) {
-	    activeElement.detachEvent('onpropertychange', handlePropertyChange);
-	  } else {
-	    activeElement.removeEventListener('propertychange', handlePropertyChange, false);
-	  }
+	  activeElement.detachEvent('onpropertychange', handlePropertyChange);
 
 	  activeElement = null;
 	  activeElementInst = null;
-	  activeElementValue = null;
-	  activeElementValueProp = null;
 	}
 
 	/**
-	 * (For IE <=11) Handles a propertychange event, sending a `change` event if
+	 * (For IE <=9) Handles a propertychange event, sending a `change` event if
 	 * the value of the active element has changed.
 	 */
 	function handlePropertyChange(nativeEvent) {
 	  if (nativeEvent.propertyName !== 'value') {
 	    return;
 	  }
-	  var value = nativeEvent.srcElement.value;
-	  if (value === activeElementValue) {
-	    return;
-	  }
-	  activeElementValue = value;
-
-	  manualDispatchChangeEvent(nativeEvent);
-	}
-
-	/**
-	 * If a `change` event should be fired, returns the target's ID.
-	 */
-	function getTargetInstForInputEvent(topLevelType, targetInst) {
-	  if (topLevelType === 'topInput') {
-	    // In modern browsers (i.e., not IE8 or IE9), the input event is exactly
-	    // what we want so fall through here and trigger an abstract event
-	    return targetInst;
+	  if (getInstIfValueChanged(activeElementInst, nativeEvent)) {
+	    manualDispatchChangeEvent(nativeEvent);
 	  }
 	}
 
-	function handleEventsForInputEventIE(topLevelType, target, targetInst) {
+	function handleEventsForInputEventPolyfill(topLevelType, target, targetInst) {
 	  if (topLevelType === 'topFocus') {
 	    // In IE8, we can capture almost all .value changes by adding a
 	    // propertychange handler and looking for events with propertyName
 	    // equal to 'value'
-	    // In IE9-11, propertychange fires for most input events but is buggy and
+	    // In IE9, propertychange fires for most input events but is buggy and
 	    // doesn't fire when text is deleted, but conveniently, selectionchange
 	    // appears to fire in all of the remaining cases so we catch those and
 	    // forward the event if the value has changed
@@ -61268,7 +63525,7 @@ module.exports =
 	}
 
 	// For IE8 and IE9.
-	function getTargetInstForInputEventIE(topLevelType, targetInst) {
+	function getTargetInstForInputEventPolyfill(topLevelType, targetInst, nativeEvent) {
 	  if (topLevelType === 'topSelectionChange' || topLevelType === 'topKeyUp' || topLevelType === 'topKeyDown') {
 	    // On the selectionchange event, the target is just document which isn't
 	    // helpful for us so just check activeElement instead.
@@ -61280,10 +63537,7 @@ module.exports =
 	    // keystroke if user does a key repeat (it'll be a little delayed: right
 	    // before the second keystroke). Other input methods (e.g., paste) seem to
 	    // fire selectionchange normally.
-	    if (activeElement && activeElement.value !== activeElementValue) {
-	      activeElementValue = activeElement.value;
-	      return activeElementInst;
-	    }
+	    return getInstIfValueChanged(activeElementInst, nativeEvent);
 	  }
 	}
 
@@ -61294,12 +63548,39 @@ module.exports =
 	  // Use the `click` event to detect changes to checkbox and radio inputs.
 	  // This approach works across all browsers, whereas `change` does not fire
 	  // until `blur` in IE8.
-	  return elem.nodeName && elem.nodeName.toLowerCase() === 'input' && (elem.type === 'checkbox' || elem.type === 'radio');
+	  var nodeName = elem.nodeName;
+	  return nodeName && nodeName.toLowerCase() === 'input' && (elem.type === 'checkbox' || elem.type === 'radio');
 	}
 
-	function getTargetInstForClickEvent(topLevelType, targetInst) {
+	function getTargetInstForClickEvent(topLevelType, targetInst, nativeEvent) {
 	  if (topLevelType === 'topClick') {
-	    return targetInst;
+	    return getInstIfValueChanged(targetInst, nativeEvent);
+	  }
+	}
+
+	function getTargetInstForInputOrChangeEvent(topLevelType, targetInst, nativeEvent) {
+	  if (topLevelType === 'topInput' || topLevelType === 'topChange') {
+	    return getInstIfValueChanged(targetInst, nativeEvent);
+	  }
+	}
+
+	function handleControlledInputBlur(inst, node) {
+	  // TODO: In IE, inst is occasionally null. Why?
+	  if (inst == null) {
+	    return;
+	  }
+
+	  // Fiber and ReactDOM keep wrapper state in separate places
+	  var state = inst._wrapperState || node._wrapperState;
+
+	  if (!state || !state.controlled || node.type !== 'number') {
+	    return;
+	  }
+
+	  // If controlled, assign the value attribute to the current value on blur
+	  var value = '' + node.value;
+	  if (node.getAttribute('value') !== value) {
+	    node.setAttribute('value', value);
 	  }
 	}
 
@@ -61314,8 +63595,10 @@ module.exports =
 	 * - select
 	 */
 	var ChangeEventPlugin = {
-
 	  eventTypes: eventTypes,
+
+	  _allowSimulatedPassThrough: true,
+	  _isInputEventSupported: isInputEventSupported,
 
 	  extractEvents: function (topLevelType, targetInst, nativeEvent, nativeEventTarget) {
 	    var targetNode = targetInst ? ReactDOMComponentTree.getNodeFromInstance(targetInst) : window;
@@ -61329,21 +63612,19 @@ module.exports =
 	      }
 	    } else if (isTextInputElement(targetNode)) {
 	      if (isInputEventSupported) {
-	        getTargetInstFunc = getTargetInstForInputEvent;
+	        getTargetInstFunc = getTargetInstForInputOrChangeEvent;
 	      } else {
-	        getTargetInstFunc = getTargetInstForInputEventIE;
-	        handleEventFunc = handleEventsForInputEventIE;
+	        getTargetInstFunc = getTargetInstForInputEventPolyfill;
+	        handleEventFunc = handleEventsForInputEventPolyfill;
 	      }
 	    } else if (shouldUseClickEvent(targetNode)) {
 	      getTargetInstFunc = getTargetInstForClickEvent;
 	    }
 
 	    if (getTargetInstFunc) {
-	      var inst = getTargetInstFunc(topLevelType, targetInst);
+	      var inst = getTargetInstFunc(topLevelType, targetInst, nativeEvent);
 	      if (inst) {
-	        var event = SyntheticEvent.getPooled(eventTypes.change, inst, nativeEvent, nativeEventTarget);
-	        event.type = 'change';
-	        EventPropagators.accumulateTwoPhaseDispatches(event);
+	        var event = createAndAccumulateChangeEvent(inst, nativeEvent, nativeEventTarget);
 	        return event;
 	      }
 	    }
@@ -61351,15 +63632,19 @@ module.exports =
 	    if (handleEventFunc) {
 	      handleEventFunc(topLevelType, targetNode, targetInst);
 	    }
-	  }
 
+	    // When blurring, set the value attribute for number inputs
+	    if (topLevelType === 'topBlur') {
+	      handleControlledInputBlur(targetInst, targetNode);
+	    }
+	  }
 	};
 
 	module.exports = ChangeEventPlugin;
 
-/***/ },
-/* 486 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 464 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61375,15 +63660,14 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var DOMLazyTree = __webpack_require__(34);
+	var DOMLazyTree = __webpack_require__(33);
 	var ExecutionEnvironment = __webpack_require__(9);
 
-	var createNodesFromMarkup = __webpack_require__(443);
+	var createNodesFromMarkup = __webpack_require__(419);
 	var emptyFunction = __webpack_require__(12);
 	var invariant = __webpack_require__(3);
 
 	var Danger = {
-
 	  /**
 	   * Replaces a node with a string of markup at its current position within its
 	   * parent. The markup must render into a single root node.
@@ -61404,14 +63688,13 @@ module.exports =
 	      DOMLazyTree.replaceChildWithTree(oldChild, markup);
 	    }
 	  }
-
 	};
 
 	module.exports = Danger;
 
-/***/ },
-/* 487 */
-/***/ function(module, exports) {
+/***/ }),
+/* 465 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61439,9 +63722,9 @@ module.exports =
 
 	module.exports = DefaultEventPluginOrder;
 
-/***/ },
-/* 488 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 466 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61455,9 +63738,9 @@ module.exports =
 
 	'use strict';
 
-	var EventPropagators = __webpack_require__(37);
+	var EventPropagators = __webpack_require__(36);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var SyntheticMouseEvent = __webpack_require__(151);
+	var SyntheticMouseEvent = __webpack_require__(158);
 
 	var eventTypes = {
 	  mouseEnter: {
@@ -61471,7 +63754,6 @@ module.exports =
 	};
 
 	var EnterLeaveEventPlugin = {
-
 	  eventTypes: eventTypes,
 
 	  /**
@@ -61538,14 +63820,13 @@ module.exports =
 
 	    return [leave, enter];
 	  }
-
 	};
 
 	module.exports = EnterLeaveEventPlugin;
 
-/***/ },
-/* 489 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 467 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61563,7 +63844,7 @@ module.exports =
 
 	var PooledClass = __webpack_require__(24);
 
-	var getTextContentAccessor = __webpack_require__(344);
+	var getTextContentAccessor = __webpack_require__(316);
 
 	/**
 	 * This helper class stores information about text content of a target node,
@@ -61642,9 +63923,9 @@ module.exports =
 
 	module.exports = FallbackCompositionState;
 
-/***/ },
-/* 490 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 468 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -61658,7 +63939,7 @@ module.exports =
 
 	'use strict';
 
-	var DOMProperty = __webpack_require__(35);
+	var DOMProperty = __webpack_require__(34);
 
 	var MUST_USE_PROPERTY = DOMProperty.injection.MUST_USE_PROPERTY;
 	var HAS_BOOLEAN_VALUE = DOMProperty.injection.HAS_BOOLEAN_VALUE;
@@ -61853,14 +64134,38 @@ module.exports =
 	    htmlFor: 'for',
 	    httpEquiv: 'http-equiv'
 	  },
-	  DOMPropertyNames: {}
+	  DOMPropertyNames: {},
+	  DOMMutationMethods: {
+	    value: function (node, value) {
+	      if (value == null) {
+	        return node.removeAttribute('value');
+	      }
+
+	      // Number inputs get special treatment due to some edge cases in
+	      // Chrome. Let everything else assign the value attribute as normal.
+	      // https://github.com/facebook/react/issues/7253#issuecomment-236074326
+	      if (node.type !== 'number' || node.hasAttribute('value') === false) {
+	        node.setAttribute('value', '' + value);
+	      } else if (node.validity && !node.validity.badInput && node.ownerDocument.activeElement !== node) {
+	        // Don't assign an attribute if validation reports bad
+	        // input. Chrome will clear the value. Additionally, don't
+	        // operate on inputs that have focus, otherwise Chrome might
+	        // strip off trailing decimal places and cause the user's
+	        // cursor position to jump to the beginning of the input.
+	        //
+	        // In ReactDOMInput, we have an onBlur event that will trigger
+	        // this function again when focus is lost.
+	        node.setAttribute('value', '' + value);
+	      }
+	    }
+	  }
 	};
 
 	module.exports = HTMLDOMPropertyConfig;
 
-/***/ },
-/* 491 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 469 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -61874,12 +64179,12 @@ module.exports =
 
 	'use strict';
 
-	var ReactReconciler = __webpack_require__(38);
+	var ReactReconciler = __webpack_require__(37);
 
-	var instantiateReactComponent = __webpack_require__(345);
-	var KeyEscapeUtils = __webpack_require__(169);
-	var shouldUpdateReactComponent = __webpack_require__(348);
-	var traverseAllChildren = __webpack_require__(349);
+	var instantiateReactComponent = __webpack_require__(318);
+	var KeyEscapeUtils = __webpack_require__(177);
+	var shouldUpdateReactComponent = __webpack_require__(321);
+	var traverseAllChildren = __webpack_require__(322);
 	var warning = __webpack_require__(4);
 
 	var ReactComponentTreeHook;
@@ -61923,8 +64228,8 @@ module.exports =
 	   * @return {?object} A set of child instances.
 	   * @internal
 	   */
-	  instantiateChildren: function (nestedChildNodes, transaction, context, selfDebugID // 0 in production and for roots
-	  ) {
+	  instantiateChildren: function (nestedChildNodes, transaction, context, selfDebugID) // 0 in production and for roots
+	  {
 	    if (nestedChildNodes == null) {
 	      return null;
 	    }
@@ -61950,8 +64255,8 @@ module.exports =
 	   * @return {?object} A new set of child instances.
 	   * @internal
 	   */
-	  updateChildren: function (prevChildren, nextChildren, mountImages, removedNodes, transaction, hostParent, hostContainerInfo, context, selfDebugID // 0 in production and for roots
-	  ) {
+	  updateChildren: function (prevChildren, nextChildren, mountImages, removedNodes, transaction, hostParent, hostContainerInfo, context, selfDebugID) // 0 in production and for roots
+	  {
 	    // We currently don't have a way to track moves here but if we use iterators
 	    // instead of for..in we can zip the iterators and check if an item has
 	    // moved.
@@ -62011,14 +64316,13 @@ module.exports =
 	      }
 	    }
 	  }
-
 	};
 
 	module.exports = ReactChildReconciler;
 
-/***/ },
-/* 492 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 470 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -62032,8 +64336,8 @@ module.exports =
 
 	'use strict';
 
-	var DOMChildrenOperations = __webpack_require__(165);
-	var ReactDOMIDOperations = __webpack_require__(497);
+	var DOMChildrenOperations = __webpack_require__(173);
+	var ReactDOMIDOperations = __webpack_require__(475);
 
 	/**
 	 * Abstracts away all functionality of the reconciler that requires knowledge of
@@ -62041,18 +64345,16 @@ module.exports =
 	 * need for this injection.
 	 */
 	var ReactComponentBrowserEnvironment = {
-
 	  processChildrenUpdates: ReactDOMIDOperations.dangerouslyProcessChildrenUpdates,
 
 	  replaceNodeWithMarkup: DOMChildrenOperations.dangerouslyReplaceNodeWithMarkup
-
 	};
 
 	module.exports = ReactComponentBrowserEnvironment;
 
-/***/ },
-/* 493 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 471 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -62069,23 +64371,23 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var React = __webpack_require__(31);
-	var ReactComponentEnvironment = __webpack_require__(172);
+	var React = __webpack_require__(30);
+	var ReactComponentEnvironment = __webpack_require__(180);
 	var ReactCurrentOwner = __webpack_require__(18);
-	var ReactErrorUtils = __webpack_require__(173);
-	var ReactInstanceMap = __webpack_require__(174);
+	var ReactErrorUtils = __webpack_require__(181);
+	var ReactInstanceMap = __webpack_require__(182);
 	var ReactInstrumentation = __webpack_require__(13);
-	var ReactNodeTypes = __webpack_require__(516);
-	var ReactReconciler = __webpack_require__(38);
+	var ReactNodeTypes = __webpack_require__(494);
+	var ReactReconciler = __webpack_require__(37);
 
 	if (true) {
-	  var checkReactTypeSpec = __webpack_require__(539);
+	  var checkReactTypeSpec = __webpack_require__(517);
 	}
 
-	var emptyObject = __webpack_require__(32);
+	var emptyObject = __webpack_require__(41);
 	var invariant = __webpack_require__(3);
-	var shallowEqual = __webpack_require__(160);
-	var shouldUpdateReactComponent = __webpack_require__(348);
+	var shallowEqual = __webpack_require__(168);
+	var shouldUpdateReactComponent = __webpack_require__(321);
 	var warning = __webpack_require__(4);
 
 	var CompositeTypes = {
@@ -62173,7 +64475,6 @@ module.exports =
 	 * @lends {ReactCompositeComponent.prototype}
 	 */
 	var ReactCompositeComponent = {
-
 	  /**
 	   * Base constructor for all composite component.
 	   *
@@ -62269,7 +64570,7 @@ module.exports =
 	      var propsMutated = inst.props !== publicProps;
 	      var componentName = Component.displayName || Component.name || 'Component';
 
-	       true ? warning(inst.props === undefined || !propsMutated, '%s(...): When calling super() in `%s`, make sure to pass ' + 'up the same props that your component\'s constructor was passed.', componentName, componentName) : void 0;
+	       true ? warning(inst.props === undefined || !propsMutated, '%s(...): When calling super() in `%s`, make sure to pass ' + "up the same props that your component's constructor was passed.", componentName, componentName) : void 0;
 	    }
 
 	    // These should be set up in the constructor, but as a convenience for
@@ -62570,7 +64871,7 @@ module.exports =
 	    if (childContext) {
 	      !(typeof Component.childContextTypes === 'object') ?  true ? invariant(false, '%s.getChildContext(): childContextTypes must be defined in order to use getChildContext().', this.getName() || 'ReactCompositeComponent') : _prodInvariant('107', this.getName() || 'ReactCompositeComponent') : void 0;
 	      if (true) {
-	        this._checkContextTypes(Component.childContextTypes, childContext, 'childContext');
+	        this._checkContextTypes(Component.childContextTypes, childContext, 'child context');
 	      }
 	      for (var name in childContext) {
 	        !(name in Component.childContextTypes) ?  true ? invariant(false, '%s.getChildContext(): key "%s" is not defined in childContextTypes.', this.getName() || 'ReactCompositeComponent', name) : _prodInvariant('108', this.getName() || 'ReactCompositeComponent', name) : void 0;
@@ -62951,14 +65252,13 @@ module.exports =
 
 	  // Stub
 	  _instantiateReactComponent: null
-
 	};
 
 	module.exports = ReactCompositeComponent;
 
-/***/ },
-/* 494 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 472 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -62977,31 +65277,32 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var AutoFocusUtils = __webpack_require__(482);
-	var CSSPropertyOperations = __webpack_require__(484);
-	var DOMLazyTree = __webpack_require__(34);
-	var DOMNamespaces = __webpack_require__(166);
-	var DOMProperty = __webpack_require__(35);
-	var DOMPropertyOperations = __webpack_require__(331);
-	var EventPluginHub = __webpack_require__(36);
-	var EventPluginRegistry = __webpack_require__(167);
-	var ReactBrowserEventEmitter = __webpack_require__(171);
-	var ReactDOMComponentFlags = __webpack_require__(332);
+	var AutoFocusUtils = __webpack_require__(460);
+	var CSSPropertyOperations = __webpack_require__(462);
+	var DOMLazyTree = __webpack_require__(33);
+	var DOMNamespaces = __webpack_require__(174);
+	var DOMProperty = __webpack_require__(34);
+	var DOMPropertyOperations = __webpack_require__(303);
+	var EventPluginHub = __webpack_require__(35);
+	var EventPluginRegistry = __webpack_require__(175);
+	var ReactBrowserEventEmitter = __webpack_require__(179);
+	var ReactDOMComponentFlags = __webpack_require__(304);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var ReactDOMInput = __webpack_require__(498);
-	var ReactDOMOption = __webpack_require__(499);
-	var ReactDOMSelect = __webpack_require__(333);
-	var ReactDOMTextarea = __webpack_require__(503);
+	var ReactDOMInput = __webpack_require__(476);
+	var ReactDOMOption = __webpack_require__(477);
+	var ReactDOMSelect = __webpack_require__(305);
+	var ReactDOMTextarea = __webpack_require__(481);
 	var ReactInstrumentation = __webpack_require__(13);
-	var ReactMultiChild = __webpack_require__(515);
-	var ReactServerRenderingTransaction = __webpack_require__(339);
+	var ReactMultiChild = __webpack_require__(493);
+	var ReactServerRenderingTransaction = __webpack_require__(311);
 
 	var emptyFunction = __webpack_require__(12);
-	var escapeTextContentForBrowser = __webpack_require__(153);
+	var escapeTextContentForBrowser = __webpack_require__(160);
 	var invariant = __webpack_require__(3);
-	var isEventSupported = __webpack_require__(179);
-	var shallowEqual = __webpack_require__(160);
-	var validateDOMNesting = __webpack_require__(181);
+	var isEventSupported = __webpack_require__(187);
+	var shallowEqual = __webpack_require__(168);
+	var inputValueTracking = __webpack_require__(317);
+	var validateDOMNesting = __webpack_require__(189);
 	var warning = __webpack_require__(4);
 
 	var Flags = ReactDOMComponentFlags;
@@ -63011,7 +65312,7 @@ module.exports =
 	var registrationNameModules = EventPluginRegistry.registrationNameModules;
 
 	// For quickly matching children type, to test if can be treated as content.
-	var CONTENT_TYPES = { 'string': true, 'number': true };
+	var CONTENT_TYPES = { string: true, number: true };
 
 	var STYLE = 'style';
 	var HTML = '__html';
@@ -63120,7 +65421,7 @@ module.exports =
 	  if (true) {
 	    // IE8 has no API for event capturing and the `onScroll` event doesn't
 	    // bubble.
-	     true ? warning(registrationName !== 'onScroll' || isEventSupported('scroll', true), 'This browser doesn\'t support the `onScroll` event') : void 0;
+	     true ? warning(registrationName !== 'onScroll' || isEventSupported('scroll', true), "This browser doesn't support the `onScroll` event") : void 0;
 	  }
 	  var containerInfo = inst._hostContainerInfo;
 	  var isDocumentFragment = containerInfo._node && containerInfo._node.nodeType === DOC_FRAGMENT_TYPE;
@@ -63210,6 +65511,10 @@ module.exports =
 	  topWaiting: 'waiting'
 	};
 
+	function trackInputValue() {
+	  inputValueTracking.track(this);
+	}
+
 	function trapBubbledEventsLocal() {
 	  var inst = this;
 	  // If a component renders to null or if another component fatals and causes
@@ -63225,7 +65530,6 @@ module.exports =
 	      break;
 	    case 'video':
 	    case 'audio':
-
 	      inst._wrapperState.listeners = [];
 	      // Create listener for each media event
 	      for (var event in mediaEvents) {
@@ -63259,34 +65563,35 @@ module.exports =
 	// those special-case tags.
 
 	var omittedCloseTags = {
-	  'area': true,
-	  'base': true,
-	  'br': true,
-	  'col': true,
-	  'embed': true,
-	  'hr': true,
-	  'img': true,
-	  'input': true,
-	  'keygen': true,
-	  'link': true,
-	  'meta': true,
-	  'param': true,
-	  'source': true,
-	  'track': true,
-	  'wbr': true
+	  area: true,
+	  base: true,
+	  br: true,
+	  col: true,
+	  embed: true,
+	  hr: true,
+	  img: true,
+	  input: true,
+	  keygen: true,
+	  link: true,
+	  meta: true,
+	  param: true,
+	  source: true,
+	  track: true,
+	  wbr: true
+	  // NOTE: menuitem's close tag should be omitted, but that causes problems.
 	};
 
 	var newlineEatingTags = {
-	  'listing': true,
-	  'pre': true,
-	  'textarea': true
+	  listing: true,
+	  pre: true,
+	  textarea: true
 	};
 
 	// For HTML, certain tags cannot have children. This has the same purpose as
 	// `omittedCloseTags` except that `menuitem` should still have its closing tag.
 
 	var voidElementTags = _assign({
-	  'menuitem': true
+	  menuitem: true
 	}, omittedCloseTags);
 
 	// We accept any tag to be rendered but since this gets injected into arbitrary
@@ -63350,7 +65655,6 @@ module.exports =
 	ReactDOMComponent.displayName = 'ReactDOMComponent';
 
 	ReactDOMComponent.Mixin = {
-
 	  /**
 	   * Generates root tag markup then recurses. This method has side effects and
 	   * is not idempotent.
@@ -63387,6 +65691,7 @@ module.exports =
 	      case 'input':
 	        ReactDOMInput.mountWrapper(this, props, hostParent);
 	        props = ReactDOMInput.getHostProps(this, props);
+	        transaction.getReactMountReady().enqueue(trackInputValue, this);
 	        transaction.getReactMountReady().enqueue(trapBubbledEventsLocal, this);
 	        break;
 	      case 'option':
@@ -63401,6 +65706,7 @@ module.exports =
 	      case 'textarea':
 	        ReactDOMTextarea.mountWrapper(this, props, hostParent);
 	        props = ReactDOMTextarea.getHostProps(this, props);
+	        transaction.getReactMountReady().enqueue(trackInputValue, this);
 	        transaction.getReactMountReady().enqueue(trapBubbledEventsLocal, this);
 	        break;
 	    }
@@ -63926,6 +66232,10 @@ module.exports =
 	          }
 	        }
 	        break;
+	      case 'input':
+	      case 'textarea':
+	        inputValueTracking.stopTracking(this);
+	        break;
 	      case 'html':
 	      case 'head':
 	      case 'body':
@@ -63954,16 +66264,15 @@ module.exports =
 	  getPublicInstance: function () {
 	    return getNode(this);
 	  }
-
 	};
 
 	_assign(ReactDOMComponent.prototype, ReactDOMComponent.Mixin, ReactMultiChild.Mixin);
 
 	module.exports = ReactDOMComponent;
 
-/***/ },
-/* 495 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 473 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -63977,7 +66286,7 @@ module.exports =
 
 	'use strict';
 
-	var validateDOMNesting = __webpack_require__(181);
+	var validateDOMNesting = __webpack_require__(189);
 
 	var DOC_NODE_TYPE = 9;
 
@@ -63998,9 +66307,9 @@ module.exports =
 
 	module.exports = ReactDOMContainerInfo;
 
-/***/ },
-/* 496 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 474 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -64016,7 +66325,7 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var DOMLazyTree = __webpack_require__(34);
+	var DOMLazyTree = __webpack_require__(33);
 	var ReactDOMComponentTree = __webpack_require__(7);
 
 	var ReactDOMEmptyComponent = function (instantiate) {
@@ -64062,9 +66371,9 @@ module.exports =
 
 	module.exports = ReactDOMEmptyComponent;
 
-/***/ },
-/* 497 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 475 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64078,14 +66387,13 @@ module.exports =
 
 	'use strict';
 
-	var DOMChildrenOperations = __webpack_require__(165);
+	var DOMChildrenOperations = __webpack_require__(173);
 	var ReactDOMComponentTree = __webpack_require__(7);
 
 	/**
 	 * Operations used to process updates to DOM nodes.
 	 */
 	var ReactDOMIDOperations = {
-
 	  /**
 	   * Updates a component's children by processing a series of updates.
 	   *
@@ -64100,9 +66408,9 @@ module.exports =
 
 	module.exports = ReactDOMIDOperations;
 
-/***/ },
-/* 498 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 476 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64119,8 +66427,8 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var DOMPropertyOperations = __webpack_require__(331);
-	var LinkedValueUtils = __webpack_require__(170);
+	var DOMPropertyOperations = __webpack_require__(303);
+	var LinkedValueUtils = __webpack_require__(178);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactUpdates = __webpack_require__(15);
 
@@ -64218,12 +66526,9 @@ module.exports =
 	      initialChecked: props.checked != null ? props.checked : props.defaultChecked,
 	      initialValue: props.value != null ? props.value : defaultValue,
 	      listeners: null,
-	      onChange: _handleChange.bind(inst)
+	      onChange: _handleChange.bind(inst),
+	      controlled: isControlled(props)
 	    };
-
-	    if (true) {
-	      inst._wrapperState.controlled = isControlled(props);
-	    }
 	  },
 
 	  updateWrapper: function (inst) {
@@ -64252,14 +66557,26 @@ module.exports =
 	    var node = ReactDOMComponentTree.getNodeFromInstance(inst);
 	    var value = LinkedValueUtils.getValue(props);
 	    if (value != null) {
+	      if (value === 0 && node.value === '') {
+	        node.value = '0';
+	        // Note: IE9 reports a number inputs as 'text', so check props instead.
+	      } else if (props.type === 'number') {
+	        // Simulate `input.valueAsNumber`. IE9 does not support it
+	        var valueAsNumber = parseFloat(node.value, 10) || 0;
 
-	      // Cast `value` to a string to ensure the value is set correctly. While
-	      // browsers typically do this as necessary, jsdom doesn't.
-	      var newValue = '' + value;
-
-	      // To avoid side effects (such as losing text selection), only set value if changed
-	      if (newValue !== node.value) {
-	        node.value = newValue;
+	        if (
+	        // eslint-disable-next-line
+	        value != valueAsNumber ||
+	        // eslint-disable-next-line
+	        value == valueAsNumber && node.value != value) {
+	          // Cast `value` to a string to ensure the value is set correctly. While
+	          // browsers typically do this as necessary, jsdom doesn't.
+	          node.value = '' + value;
+	        }
+	      } else if (node.value !== '' + value) {
+	        // Cast `value` to a string to ensure the value is set correctly. While
+	        // browsers typically do this as necessary, jsdom doesn't.
+	        node.value = '' + value;
 	      }
 	    } else {
 	      if (props.value == null && props.defaultValue != null) {
@@ -64382,9 +66699,9 @@ module.exports =
 
 	module.exports = ReactDOMInput;
 
-/***/ },
-/* 499 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 477 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64400,9 +66717,9 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var React = __webpack_require__(31);
+	var React = __webpack_require__(30);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var ReactDOMSelect = __webpack_require__(333);
+	var ReactDOMSelect = __webpack_require__(305);
 
 	var warning = __webpack_require__(4);
 	var didWarnInvalidOptionChildren = false;
@@ -64504,14 +66821,13 @@ module.exports =
 
 	    return hostProps;
 	  }
-
 	};
 
 	module.exports = ReactDOMOption;
 
-/***/ },
-/* 500 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 478 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64527,8 +66843,8 @@ module.exports =
 
 	var ExecutionEnvironment = __webpack_require__(9);
 
-	var getNodeForCharacterOffset = __webpack_require__(545);
-	var getTextContentAccessor = __webpack_require__(344);
+	var getNodeForCharacterOffset = __webpack_require__(522);
+	var getTextContentAccessor = __webpack_require__(316);
 
 	/**
 	 * While `isCollapsed` is available on the Selection object and `collapsed`
@@ -64725,9 +67041,9 @@ module.exports =
 
 	module.exports = ReactDOMSelection;
 
-/***/ },
-/* 501 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 479 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64741,9 +67057,9 @@ module.exports =
 
 	'use strict';
 
-	var ReactDefaultInjection = __webpack_require__(506);
-	var ReactServerRendering = __webpack_require__(522);
-	var ReactVersion = __webpack_require__(524);
+	var ReactDefaultInjection = __webpack_require__(484);
+	var ReactServerRendering = __webpack_require__(500);
+	var ReactVersion = __webpack_require__(502);
 
 	ReactDefaultInjection.inject();
 
@@ -64755,9 +67071,9 @@ module.exports =
 
 	module.exports = ReactDOMServer;
 
-/***/ },
-/* 502 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 480 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64774,13 +67090,13 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var DOMChildrenOperations = __webpack_require__(165);
-	var DOMLazyTree = __webpack_require__(34);
+	var DOMChildrenOperations = __webpack_require__(173);
+	var DOMLazyTree = __webpack_require__(33);
 	var ReactDOMComponentTree = __webpack_require__(7);
 
-	var escapeTextContentForBrowser = __webpack_require__(153);
+	var escapeTextContentForBrowser = __webpack_require__(160);
 	var invariant = __webpack_require__(3);
-	var validateDOMNesting = __webpack_require__(181);
+	var validateDOMNesting = __webpack_require__(189);
 
 	/**
 	 * Text nodes violate a couple assumptions that React makes about components:
@@ -64813,7 +67129,6 @@ module.exports =
 	};
 
 	_assign(ReactDOMTextComponent.prototype, {
-
 	  /**
 	   * Creates the markup for this text node. This node is not intended to have
 	   * any features besides containing text content.
@@ -64918,14 +67233,13 @@ module.exports =
 	    this._commentNodes = null;
 	    ReactDOMComponentTree.uncacheNode(this);
 	  }
-
 	});
 
 	module.exports = ReactDOMTextComponent;
 
-/***/ },
-/* 503 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 481 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -64942,7 +67256,7 @@ module.exports =
 	var _prodInvariant = __webpack_require__(5),
 	    _assign = __webpack_require__(6);
 
-	var LinkedValueUtils = __webpack_require__(170);
+	var LinkedValueUtils = __webpack_require__(178);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactUpdates = __webpack_require__(15);
 
@@ -65087,9 +67401,9 @@ module.exports =
 
 	module.exports = ReactDOMTextarea;
 
-/***/ },
-/* 504 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 482 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -65227,9 +67541,9 @@ module.exports =
 	  traverseEnterLeave: traverseEnterLeave
 	};
 
-/***/ },
-/* 505 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 483 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -65244,12 +67558,12 @@ module.exports =
 
 	'use strict';
 
-	var ReactInvalidSetStateWarningHook = __webpack_require__(513);
-	var ReactHostOperationHistoryHook = __webpack_require__(511);
+	var ReactInvalidSetStateWarningHook = __webpack_require__(491);
+	var ReactHostOperationHistoryHook = __webpack_require__(489);
 	var ReactComponentTreeHook = __webpack_require__(14);
 	var ExecutionEnvironment = __webpack_require__(9);
 
-	var performanceNow = __webpack_require__(452);
+	var performanceNow = __webpack_require__(428);
 	var warning = __webpack_require__(4);
 
 	var hooks = [];
@@ -65411,9 +67725,7 @@ module.exports =
 	}
 
 	var lastMarkTimeStamp = 0;
-	var canUsePerformanceMeasure =
-	// $FlowFixMe https://github.com/facebook/flow/issues/2345
-	typeof performance !== 'undefined' && typeof performance.mark === 'function' && typeof performance.clearMarks === 'function' && typeof performance.measure === 'function' && typeof performance.clearMeasures === 'function';
+	var canUsePerformanceMeasure = typeof performance !== 'undefined' && typeof performance.mark === 'function' && typeof performance.clearMarks === 'function' && typeof performance.measure === 'function' && typeof performance.clearMeasures === 'function';
 
 	function shouldMark(debugID) {
 	  if (!isProfiling || !canUsePerformanceMeasure) {
@@ -65461,7 +67773,9 @@ module.exports =
 	  }
 
 	  performance.clearMarks(markName);
-	  performance.clearMeasures(measurementName);
+	  if (measurementName) {
+	    performance.clearMeasures(measurementName);
+	  }
 	}
 
 	var ReactDebugTool = {
@@ -65592,9 +67906,9 @@ module.exports =
 
 	module.exports = ReactDebugTool;
 
-/***/ },
-/* 506 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 484 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -65608,25 +67922,25 @@ module.exports =
 
 	'use strict';
 
-	var ARIADOMPropertyConfig = __webpack_require__(481);
-	var BeforeInputEventPlugin = __webpack_require__(483);
-	var ChangeEventPlugin = __webpack_require__(485);
-	var DefaultEventPluginOrder = __webpack_require__(487);
-	var EnterLeaveEventPlugin = __webpack_require__(488);
-	var HTMLDOMPropertyConfig = __webpack_require__(490);
-	var ReactComponentBrowserEnvironment = __webpack_require__(492);
-	var ReactDOMComponent = __webpack_require__(494);
+	var ARIADOMPropertyConfig = __webpack_require__(459);
+	var BeforeInputEventPlugin = __webpack_require__(461);
+	var ChangeEventPlugin = __webpack_require__(463);
+	var DefaultEventPluginOrder = __webpack_require__(465);
+	var EnterLeaveEventPlugin = __webpack_require__(466);
+	var HTMLDOMPropertyConfig = __webpack_require__(468);
+	var ReactComponentBrowserEnvironment = __webpack_require__(470);
+	var ReactDOMComponent = __webpack_require__(472);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var ReactDOMEmptyComponent = __webpack_require__(496);
-	var ReactDOMTreeTraversal = __webpack_require__(504);
-	var ReactDOMTextComponent = __webpack_require__(502);
-	var ReactDefaultBatchingStrategy = __webpack_require__(334);
-	var ReactEventListener = __webpack_require__(509);
-	var ReactInjection = __webpack_require__(512);
-	var ReactReconcileTransaction = __webpack_require__(519);
-	var SVGDOMPropertyConfig = __webpack_require__(525);
-	var SelectEventPlugin = __webpack_require__(526);
-	var SimpleEventPlugin = __webpack_require__(527);
+	var ReactDOMEmptyComponent = __webpack_require__(474);
+	var ReactDOMTreeTraversal = __webpack_require__(482);
+	var ReactDOMTextComponent = __webpack_require__(480);
+	var ReactDefaultBatchingStrategy = __webpack_require__(306);
+	var ReactEventListener = __webpack_require__(487);
+	var ReactInjection = __webpack_require__(490);
+	var ReactReconcileTransaction = __webpack_require__(497);
+	var SVGDOMPropertyConfig = __webpack_require__(503);
+	var SelectEventPlugin = __webpack_require__(504);
+	var SimpleEventPlugin = __webpack_require__(505);
 
 	var alreadyInjected = false;
 
@@ -65682,11 +67996,11 @@ module.exports =
 	  inject: inject
 	};
 
-/***/ },
-/* 507 */
-357,
-/* 508 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 485 */
+331,
+/* 486 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -65700,7 +68014,7 @@ module.exports =
 
 	'use strict';
 
-	var EventPluginHub = __webpack_require__(36);
+	var EventPluginHub = __webpack_require__(35);
 
 	function runEventQueueInBatch(events) {
 	  EventPluginHub.enqueueEvents(events);
@@ -65708,7 +68022,6 @@ module.exports =
 	}
 
 	var ReactEventEmitterMixin = {
-
 	  /**
 	   * Streams a fired top-level event to `EventPluginHub` where plugins have the
 	   * opportunity to create `ReactEvent`s to be dispatched.
@@ -65721,9 +68034,9 @@ module.exports =
 
 	module.exports = ReactEventEmitterMixin;
 
-/***/ },
-/* 509 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 487 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -65739,14 +68052,14 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var EventListener = __webpack_require__(192);
+	var EventListener = __webpack_require__(196);
 	var ExecutionEnvironment = __webpack_require__(9);
 	var PooledClass = __webpack_require__(24);
 	var ReactDOMComponentTree = __webpack_require__(7);
 	var ReactUpdates = __webpack_require__(15);
 
-	var getEventTarget = __webpack_require__(178);
-	var getUnboundedScrollPosition = __webpack_require__(445);
+	var getEventTarget = __webpack_require__(186);
+	var getUnboundedScrollPosition = __webpack_require__(421);
 
 	/**
 	 * Find the deepest React component completely containing the root of the
@@ -65880,9 +68193,9 @@ module.exports =
 
 	module.exports = ReactEventListener;
 
-/***/ },
-/* 510 */
-/***/ function(module, exports) {
+/***/ }),
+/* 488 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -65906,9 +68219,9 @@ module.exports =
 
 	module.exports = ReactFeatureFlags;
 
-/***/ },
-/* 511 */
-/***/ function(module, exports) {
+/***/ }),
+/* 489 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -65944,9 +68257,9 @@ module.exports =
 
 	module.exports = ReactHostOperationHistoryHook;
 
-/***/ },
-/* 512 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 490 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -65960,13 +68273,13 @@ module.exports =
 
 	'use strict';
 
-	var DOMProperty = __webpack_require__(35);
-	var EventPluginHub = __webpack_require__(36);
-	var EventPluginUtils = __webpack_require__(168);
-	var ReactComponentEnvironment = __webpack_require__(172);
-	var ReactEmptyComponent = __webpack_require__(335);
-	var ReactBrowserEventEmitter = __webpack_require__(171);
-	var ReactHostComponent = __webpack_require__(336);
+	var DOMProperty = __webpack_require__(34);
+	var EventPluginHub = __webpack_require__(35);
+	var EventPluginUtils = __webpack_require__(176);
+	var ReactComponentEnvironment = __webpack_require__(180);
+	var ReactEmptyComponent = __webpack_require__(307);
+	var ReactBrowserEventEmitter = __webpack_require__(179);
+	var ReactHostComponent = __webpack_require__(308);
 	var ReactUpdates = __webpack_require__(15);
 
 	var ReactInjection = {
@@ -65982,9 +68295,9 @@ module.exports =
 
 	module.exports = ReactInjection;
 
-/***/ },
-/* 513 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 491 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2016-present, Facebook, Inc.
@@ -66023,9 +68336,9 @@ module.exports =
 
 	module.exports = ReactInvalidSetStateWarningHook;
 
-/***/ },
-/* 514 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 492 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66039,7 +68352,7 @@ module.exports =
 
 	'use strict';
 
-	var adler32 = __webpack_require__(538);
+	var adler32 = __webpack_require__(516);
 
 	var TAG_END = /\/?>/;
 	var COMMENT_START = /^<\!\-\-/;
@@ -66077,9 +68390,9 @@ module.exports =
 
 	module.exports = ReactMarkupChecksum;
 
-/***/ },
-/* 515 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 493 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66095,16 +68408,16 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var ReactComponentEnvironment = __webpack_require__(172);
-	var ReactInstanceMap = __webpack_require__(174);
+	var ReactComponentEnvironment = __webpack_require__(180);
+	var ReactInstanceMap = __webpack_require__(182);
 	var ReactInstrumentation = __webpack_require__(13);
 
 	var ReactCurrentOwner = __webpack_require__(18);
-	var ReactReconciler = __webpack_require__(38);
-	var ReactChildReconciler = __webpack_require__(491);
+	var ReactReconciler = __webpack_require__(37);
+	var ReactChildReconciler = __webpack_require__(469);
 
 	var emptyFunction = __webpack_require__(12);
-	var flattenChildren = __webpack_require__(541);
+	var flattenChildren = __webpack_require__(519);
 	var invariant = __webpack_require__(3);
 
 	/**
@@ -66251,7 +68564,6 @@ module.exports =
 	 * @internal
 	 */
 	var ReactMultiChild = {
-
 	  /**
 	   * Provides common functionality for components that must reconcile multiple
 	   * children. This is used by `ReactDOMComponent` to mount, update, and
@@ -66260,7 +68572,6 @@ module.exports =
 	   * @lends {ReactMultiChild.prototype}
 	   */
 	  Mixin: {
-
 	    _reconcilerInstantiateChildren: function (nestedChildren, transaction, context) {
 	      if (true) {
 	        var selfDebugID = getDebugID(this);
@@ -66524,16 +68835,14 @@ module.exports =
 	      child._mountIndex = null;
 	      return update;
 	    }
-
 	  }
-
 	};
 
 	module.exports = ReactMultiChild;
 
-/***/ },
-/* 516 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 494 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66550,7 +68859,7 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var React = __webpack_require__(31);
+	var React = __webpack_require__(30);
 
 	var invariant = __webpack_require__(3);
 
@@ -66575,9 +68884,9 @@ module.exports =
 
 	module.exports = ReactNodeTypes;
 
-/***/ },
-/* 517 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 495 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66668,16 +68977,42 @@ module.exports =
 	      owner.detachRef(ref);
 	    }
 	  }
-
 	};
 
 	module.exports = ReactOwner;
 
-/***/ },
-/* 518 */
-187,
-/* 519 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 496 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * 
+	 */
+
+	'use strict';
+
+	var ReactPropTypeLocationNames = {};
+
+	if (true) {
+	  ReactPropTypeLocationNames = {
+	    prop: 'prop',
+	    context: 'context',
+	    childContext: 'child context'
+	  };
+	}
+
+	module.exports = ReactPropTypeLocationNames;
+
+/***/ }),
+/* 497 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66693,13 +69028,13 @@ module.exports =
 
 	var _assign = __webpack_require__(6);
 
-	var CallbackQueue = __webpack_require__(330);
+	var CallbackQueue = __webpack_require__(302);
 	var PooledClass = __webpack_require__(24);
-	var ReactBrowserEventEmitter = __webpack_require__(171);
-	var ReactInputSelection = __webpack_require__(337);
+	var ReactBrowserEventEmitter = __webpack_require__(179);
+	var ReactInputSelection = __webpack_require__(309);
 	var ReactInstrumentation = __webpack_require__(13);
-	var Transaction = __webpack_require__(152);
-	var ReactUpdateQueue = __webpack_require__(340);
+	var Transaction = __webpack_require__(159);
+	var ReactUpdateQueue = __webpack_require__(312);
 
 	/**
 	 * Ensures that, when possible, the selection range (currently selected text
@@ -66857,9 +69192,9 @@ module.exports =
 
 	module.exports = ReactReconcileTransaction;
 
-/***/ },
-/* 520 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 498 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66874,7 +69209,7 @@ module.exports =
 
 	'use strict';
 
-	var ReactOwner = __webpack_require__(517);
+	var ReactOwner = __webpack_require__(495);
 
 	var ReactRef = {};
 
@@ -66950,9 +69285,9 @@ module.exports =
 
 	module.exports = ReactRef;
 
-/***/ },
-/* 521 */
-/***/ function(module, exports) {
+/***/ }),
+/* 499 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2014-present, Facebook, Inc.
@@ -66976,9 +69311,9 @@ module.exports =
 
 	module.exports = ReactServerBatchingStrategy;
 
-/***/ },
-/* 522 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 500 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -66993,18 +69328,18 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var React = __webpack_require__(31);
-	var ReactDOMContainerInfo = __webpack_require__(495);
-	var ReactDefaultBatchingStrategy = __webpack_require__(334);
+	var React = __webpack_require__(30);
+	var ReactDOMContainerInfo = __webpack_require__(473);
+	var ReactDefaultBatchingStrategy = __webpack_require__(306);
 	var ReactInstrumentation = __webpack_require__(13);
-	var ReactMarkupChecksum = __webpack_require__(514);
-	var ReactReconciler = __webpack_require__(38);
-	var ReactServerBatchingStrategy = __webpack_require__(521);
-	var ReactServerRenderingTransaction = __webpack_require__(339);
+	var ReactMarkupChecksum = __webpack_require__(492);
+	var ReactReconciler = __webpack_require__(37);
+	var ReactServerBatchingStrategy = __webpack_require__(499);
+	var ReactServerRenderingTransaction = __webpack_require__(311);
 	var ReactUpdates = __webpack_require__(15);
 
-	var emptyObject = __webpack_require__(32);
-	var instantiateReactComponent = __webpack_require__(345);
+	var emptyObject = __webpack_require__(41);
+	var instantiateReactComponent = __webpack_require__(318);
 	var invariant = __webpack_require__(3);
 
 	var pendingTransactions = 0;
@@ -67070,9 +69405,9 @@ module.exports =
 	  renderToStaticMarkup: renderToStaticMarkup
 	};
 
-/***/ },
-/* 523 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 501 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2015-present, Facebook, Inc.
@@ -67089,7 +69424,7 @@ module.exports =
 
 	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-	var ReactUpdateQueue = __webpack_require__(340);
+	var ReactUpdateQueue = __webpack_require__(312);
 
 	var warning = __webpack_require__(4);
 
@@ -67213,9 +69548,9 @@ module.exports =
 
 	module.exports = ReactServerUpdateQueue;
 
-/***/ },
-/* 524 */
-/***/ function(module, exports) {
+/***/ }),
+/* 502 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -67229,11 +69564,11 @@ module.exports =
 
 	'use strict';
 
-	module.exports = '15.4.2';
+	module.exports = '15.6.1';
 
-/***/ },
-/* 525 */
-/***/ function(module, exports) {
+/***/ }),
+/* 503 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -67537,9 +69872,9 @@ module.exports =
 
 	module.exports = SVGDOMPropertyConfig;
 
-/***/ },
-/* 526 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 504 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -67553,15 +69888,15 @@ module.exports =
 
 	'use strict';
 
-	var EventPropagators = __webpack_require__(37);
+	var EventPropagators = __webpack_require__(36);
 	var ExecutionEnvironment = __webpack_require__(9);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var ReactInputSelection = __webpack_require__(337);
+	var ReactInputSelection = __webpack_require__(309);
 	var SyntheticEvent = __webpack_require__(16);
 
-	var getActiveElement = __webpack_require__(194);
-	var isTextInputElement = __webpack_require__(346);
-	var shallowEqual = __webpack_require__(160);
+	var getActiveElement = __webpack_require__(198);
+	var isTextInputElement = __webpack_require__(319);
+	var shallowEqual = __webpack_require__(168);
 
 	var skipSelectionChangeEvent = ExecutionEnvironment.canUseDOM && 'documentMode' in document && document.documentMode <= 11;
 
@@ -67666,7 +70001,6 @@ module.exports =
 	 * - Fires after user input.
 	 */
 	var SelectEventPlugin = {
-
 	  eventTypes: eventTypes,
 
 	  extractEvents: function (topLevelType, targetInst, nativeEvent, nativeEventTarget) {
@@ -67690,7 +70024,6 @@ module.exports =
 	        activeElementInst = null;
 	        lastSelection = null;
 	        break;
-
 	      // Don't fire the event while the user is dragging. This matches the
 	      // semantics of the native select event.
 	      case 'topMouseDown':
@@ -67700,7 +70033,6 @@ module.exports =
 	      case 'topMouseUp':
 	        mouseDown = false;
 	        return constructSelectEvent(nativeEvent, nativeEventTarget);
-
 	      // Chrome and IE fire non-standard event when selection is changed (and
 	      // sometimes when it hasn't). IE's event fires out of order with respect
 	      // to key and input events on deletion, so we discard it.
@@ -67732,9 +70064,9 @@ module.exports =
 
 	module.exports = SelectEventPlugin;
 
-/***/ },
-/* 527 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 505 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -67751,23 +70083,23 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var EventListener = __webpack_require__(192);
-	var EventPropagators = __webpack_require__(37);
+	var EventListener = __webpack_require__(196);
+	var EventPropagators = __webpack_require__(36);
 	var ReactDOMComponentTree = __webpack_require__(7);
-	var SyntheticAnimationEvent = __webpack_require__(528);
-	var SyntheticClipboardEvent = __webpack_require__(529);
+	var SyntheticAnimationEvent = __webpack_require__(506);
+	var SyntheticClipboardEvent = __webpack_require__(507);
 	var SyntheticEvent = __webpack_require__(16);
-	var SyntheticFocusEvent = __webpack_require__(532);
-	var SyntheticKeyboardEvent = __webpack_require__(534);
-	var SyntheticMouseEvent = __webpack_require__(151);
-	var SyntheticDragEvent = __webpack_require__(531);
-	var SyntheticTouchEvent = __webpack_require__(535);
-	var SyntheticTransitionEvent = __webpack_require__(536);
-	var SyntheticUIEvent = __webpack_require__(39);
-	var SyntheticWheelEvent = __webpack_require__(537);
+	var SyntheticFocusEvent = __webpack_require__(510);
+	var SyntheticKeyboardEvent = __webpack_require__(512);
+	var SyntheticMouseEvent = __webpack_require__(158);
+	var SyntheticDragEvent = __webpack_require__(509);
+	var SyntheticTouchEvent = __webpack_require__(513);
+	var SyntheticTransitionEvent = __webpack_require__(514);
+	var SyntheticUIEvent = __webpack_require__(38);
+	var SyntheticWheelEvent = __webpack_require__(515);
 
 	var emptyFunction = __webpack_require__(12);
-	var getEventCharCode = __webpack_require__(176);
+	var getEventCharCode = __webpack_require__(184);
 	var invariant = __webpack_require__(3);
 
 	/**
@@ -67819,7 +70151,6 @@ module.exports =
 	}
 
 	var SimpleEventPlugin = {
-
 	  eventTypes: eventTypes,
 
 	  extractEvents: function (topLevelType, targetInst, nativeEvent, nativeEventTarget) {
@@ -67959,14 +70290,13 @@ module.exports =
 	      delete onClickListeners[key];
 	    }
 	  }
-
 	};
 
 	module.exports = SimpleEventPlugin;
 
-/***/ },
-/* 528 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 506 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68007,9 +70337,9 @@ module.exports =
 
 	module.exports = SyntheticAnimationEvent;
 
-/***/ },
-/* 529 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 507 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68049,9 +70379,9 @@ module.exports =
 
 	module.exports = SyntheticClipboardEvent;
 
-/***/ },
-/* 530 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 508 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68089,9 +70419,9 @@ module.exports =
 
 	module.exports = SyntheticCompositionEvent;
 
-/***/ },
-/* 531 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 509 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68105,7 +70435,7 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticMouseEvent = __webpack_require__(151);
+	var SyntheticMouseEvent = __webpack_require__(158);
 
 	/**
 	 * @interface DragEvent
@@ -68129,9 +70459,9 @@ module.exports =
 
 	module.exports = SyntheticDragEvent;
 
-/***/ },
-/* 532 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 510 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68145,7 +70475,7 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticUIEvent = __webpack_require__(39);
+	var SyntheticUIEvent = __webpack_require__(38);
 
 	/**
 	 * @interface FocusEvent
@@ -68169,9 +70499,9 @@ module.exports =
 
 	module.exports = SyntheticFocusEvent;
 
-/***/ },
-/* 533 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 511 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68210,9 +70540,9 @@ module.exports =
 
 	module.exports = SyntheticInputEvent;
 
-/***/ },
-/* 534 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 512 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68226,11 +70556,11 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticUIEvent = __webpack_require__(39);
+	var SyntheticUIEvent = __webpack_require__(38);
 
-	var getEventCharCode = __webpack_require__(176);
-	var getEventKey = __webpack_require__(542);
-	var getEventModifierState = __webpack_require__(177);
+	var getEventCharCode = __webpack_require__(184);
+	var getEventKey = __webpack_require__(520);
+	var getEventModifierState = __webpack_require__(185);
 
 	/**
 	 * @interface KeyboardEvent
@@ -68298,9 +70628,9 @@ module.exports =
 
 	module.exports = SyntheticKeyboardEvent;
 
-/***/ },
-/* 535 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 513 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68314,9 +70644,9 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticUIEvent = __webpack_require__(39);
+	var SyntheticUIEvent = __webpack_require__(38);
 
-	var getEventModifierState = __webpack_require__(177);
+	var getEventModifierState = __webpack_require__(185);
 
 	/**
 	 * @interface TouchEvent
@@ -68347,9 +70677,9 @@ module.exports =
 
 	module.exports = SyntheticTouchEvent;
 
-/***/ },
-/* 536 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 514 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68390,9 +70720,9 @@ module.exports =
 
 	module.exports = SyntheticTransitionEvent;
 
-/***/ },
-/* 537 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 515 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68406,7 +70736,7 @@ module.exports =
 
 	'use strict';
 
-	var SyntheticMouseEvent = __webpack_require__(151);
+	var SyntheticMouseEvent = __webpack_require__(158);
 
 	/**
 	 * @interface WheelEvent
@@ -68414,15 +70744,12 @@ module.exports =
 	 */
 	var WheelEventInterface = {
 	  deltaX: function (event) {
-	    return 'deltaX' in event ? event.deltaX :
-	    // Fallback to `wheelDeltaX` for Webkit and normalize (right is positive).
+	    return 'deltaX' in event ? event.deltaX : // Fallback to `wheelDeltaX` for Webkit and normalize (right is positive).
 	    'wheelDeltaX' in event ? -event.wheelDeltaX : 0;
 	  },
 	  deltaY: function (event) {
-	    return 'deltaY' in event ? event.deltaY :
-	    // Fallback to `wheelDeltaY` for Webkit and normalize (down is positive).
-	    'wheelDeltaY' in event ? -event.wheelDeltaY :
-	    // Fallback to `wheelDelta` for IE<9 and normalize (down is positive).
+	    return 'deltaY' in event ? event.deltaY : // Fallback to `wheelDeltaY` for Webkit and normalize (down is positive).
+	    'wheelDeltaY' in event ? -event.wheelDeltaY : // Fallback to `wheelDelta` for IE<9 and normalize (down is positive).
 	    'wheelDelta' in event ? -event.wheelDelta : 0;
 	  },
 	  deltaZ: null,
@@ -68448,9 +70775,9 @@ module.exports =
 
 	module.exports = SyntheticWheelEvent;
 
-/***/ },
-/* 538 */
-/***/ function(module, exports) {
+/***/ }),
+/* 516 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68496,9 +70823,9 @@ module.exports =
 
 	module.exports = adler32;
 
-/***/ },
-/* 539 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 517 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68514,8 +70841,8 @@ module.exports =
 
 	var _prodInvariant = __webpack_require__(5);
 
-	var ReactPropTypeLocationNames = __webpack_require__(518);
-	var ReactPropTypesSecret = __webpack_require__(338);
+	var ReactPropTypeLocationNames = __webpack_require__(496);
+	var ReactPropTypesSecret = __webpack_require__(310);
 
 	var invariant = __webpack_require__(3);
 	var warning = __webpack_require__(4);
@@ -68587,9 +70914,9 @@ module.exports =
 
 	module.exports = checkReactTypeSpec;
 
-/***/ },
-/* 540 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 518 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68603,7 +70930,7 @@ module.exports =
 
 	'use strict';
 
-	var CSSProperty = __webpack_require__(329);
+	var CSSProperty = __webpack_require__(301);
 	var warning = __webpack_require__(4);
 
 	var isUnitlessNumber = CSSProperty.isUnitlessNumber;
@@ -68619,7 +70946,7 @@ module.exports =
 	 * @param {ReactDOMComponent} component
 	 * @return {string} Normalized style value with dimensions applied.
 	 */
-	function dangerousStyleValue(name, value, component) {
+	function dangerousStyleValue(name, value, component, isCustomProperty) {
 	  // Note that we've removed escapeTextForBrowser() calls here since the
 	  // whole string will be escaped when the attribute is injected into
 	  // the markup. If you provide unsafe user data here they can inject
@@ -68636,7 +70963,7 @@ module.exports =
 	  }
 
 	  var isNonNumeric = isNaN(value);
-	  if (isNonNumeric || value === 0 || isUnitlessNumber.hasOwnProperty(name) && isUnitlessNumber[name]) {
+	  if (isCustomProperty || isNonNumeric || value === 0 || isUnitlessNumber.hasOwnProperty(name) && isUnitlessNumber[name]) {
 	    return '' + value; // cast to string
 	  }
 
@@ -68670,9 +70997,9 @@ module.exports =
 
 	module.exports = dangerousStyleValue;
 
-/***/ },
-/* 541 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 519 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68687,8 +71014,8 @@ module.exports =
 
 	'use strict';
 
-	var KeyEscapeUtils = __webpack_require__(169);
-	var traverseAllChildren = __webpack_require__(349);
+	var KeyEscapeUtils = __webpack_require__(177);
+	var traverseAllChildren = __webpack_require__(322);
 	var warning = __webpack_require__(4);
 
 	var ReactComponentTreeHook;
@@ -68750,9 +71077,9 @@ module.exports =
 
 	module.exports = flattenChildren;
 
-/***/ },
-/* 542 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 520 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68766,25 +71093,25 @@ module.exports =
 
 	'use strict';
 
-	var getEventCharCode = __webpack_require__(176);
+	var getEventCharCode = __webpack_require__(184);
 
 	/**
 	 * Normalization of deprecated HTML5 `key` values
 	 * @see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent#Key_names
 	 */
 	var normalizeKey = {
-	  'Esc': 'Escape',
-	  'Spacebar': ' ',
-	  'Left': 'ArrowLeft',
-	  'Up': 'ArrowUp',
-	  'Right': 'ArrowRight',
-	  'Down': 'ArrowDown',
-	  'Del': 'Delete',
-	  'Win': 'OS',
-	  'Menu': 'ContextMenu',
-	  'Apps': 'ContextMenu',
-	  'Scroll': 'ScrollLock',
-	  'MozPrintableKey': 'Unidentified'
+	  Esc: 'Escape',
+	  Spacebar: ' ',
+	  Left: 'ArrowLeft',
+	  Up: 'ArrowUp',
+	  Right: 'ArrowRight',
+	  Down: 'ArrowDown',
+	  Del: 'Delete',
+	  Win: 'OS',
+	  Menu: 'ContextMenu',
+	  Apps: 'ContextMenu',
+	  Scroll: 'ScrollLock',
+	  MozPrintableKey: 'Unidentified'
 	};
 
 	/**
@@ -68814,8 +71141,18 @@ module.exports =
 	  40: 'ArrowDown',
 	  45: 'Insert',
 	  46: 'Delete',
-	  112: 'F1', 113: 'F2', 114: 'F3', 115: 'F4', 116: 'F5', 117: 'F6',
-	  118: 'F7', 119: 'F8', 120: 'F9', 121: 'F10', 122: 'F11', 123: 'F12',
+	  112: 'F1',
+	  113: 'F2',
+	  114: 'F3',
+	  115: 'F4',
+	  116: 'F5',
+	  117: 'F6',
+	  118: 'F7',
+	  119: 'F8',
+	  120: 'F9',
+	  121: 'F10',
+	  122: 'F11',
+	  123: 'F12',
 	  144: 'NumLock',
 	  145: 'ScrollLock',
 	  224: 'Meta'
@@ -68856,36 +71193,11 @@ module.exports =
 
 	module.exports = getEventKey;
 
-/***/ },
-/* 543 */
-189,
-/* 544 */
-/***/ function(module, exports) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 * 
-	 */
-
-	'use strict';
-
-	var nextDebugID = 1;
-
-	function getNextDebugID() {
-	  return nextDebugID++;
-	}
-
-	module.exports = getNextDebugID;
-
-/***/ },
-/* 545 */
-/***/ function(module, exports) {
+/***/ }),
+/* 521 */
+334,
+/* 522 */
+/***/ (function(module, exports) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -68961,9 +71273,9 @@ module.exports =
 
 	module.exports = getNodeForCharacterOffset;
 
-/***/ },
-/* 546 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 523 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -69066,9 +71378,9 @@ module.exports =
 
 	module.exports = getVendorPrefixedEventName;
 
-/***/ },
-/* 547 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 524 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -69082,7 +71394,7 @@ module.exports =
 
 	'use strict';
 
-	var escapeTextContentForBrowser = __webpack_require__(153);
+	var escapeTextContentForBrowser = __webpack_require__(160);
 
 	/**
 	 * Escapes attribute value to prevent scripting attacks.
@@ -69096,18 +71408,18 @@ module.exports =
 
 	module.exports = quoteAttributeValueForBrowser;
 
-/***/ },
-/* 548 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 525 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
-	module.exports = __webpack_require__(501);
+	module.exports = __webpack_require__(479);
 
 
-/***/ },
-/* 549 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 526 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69139,9 +71451,9 @@ module.exports =
 	exports.default = History;
 	module.exports = exports['default'];
 
-/***/ },
-/* 550 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 527 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69153,7 +71465,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _Link = __webpack_require__(350);
+	var _Link = __webpack_require__(323);
 
 	var _Link2 = _interopRequireDefault(_Link);
 
@@ -69172,9 +71484,9 @@ module.exports =
 	exports.default = IndexLink;
 	module.exports = exports['default'];
 
-/***/ },
-/* 551 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 528 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69192,7 +71504,7 @@ module.exports =
 
 	var _invariant2 = _interopRequireDefault(_invariant);
 
-	var _Redirect = __webpack_require__(351);
+	var _Redirect = __webpack_require__(324);
 
 	var _Redirect2 = _interopRequireDefault(_Redirect);
 
@@ -69240,9 +71552,9 @@ module.exports =
 	exports.default = IndexRedirect;
 	module.exports = exports['default'];
 
-/***/ },
-/* 552 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 529 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69305,9 +71617,9 @@ module.exports =
 	exports.default = IndexRoute;
 	module.exports = exports['default'];
 
-/***/ },
-/* 553 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 530 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69378,9 +71690,9 @@ module.exports =
 	exports.default = Lifecycle;
 	module.exports = exports['default'];
 
-/***/ },
-/* 554 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 531 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69440,9 +71752,9 @@ module.exports =
 	exports.default = Route;
 	module.exports = exports['default'];
 
-/***/ },
-/* 555 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 532 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69490,9 +71802,9 @@ module.exports =
 	exports.default = RouteContext;
 	module.exports = exports['default'];
 
-/***/ },
-/* 556 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 533 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69500,11 +71812,11 @@ module.exports =
 
 	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
-	var _createHashHistory = __webpack_require__(161);
+	var _createHashHistory = __webpack_require__(169);
 
 	var _createHashHistory2 = _interopRequireDefault(_createHashHistory);
 
-	var _useQueries = __webpack_require__(29);
+	var _useQueries = __webpack_require__(28);
 
 	var _useQueries2 = _interopRequireDefault(_useQueries);
 
@@ -69516,19 +71828,19 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _createTransitionManager = __webpack_require__(184);
+	var _createTransitionManager = __webpack_require__(192);
 
 	var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
 
 	var _InternalPropTypes = __webpack_require__(25);
 
-	var _RouterContext = __webpack_require__(154);
+	var _RouterContext = __webpack_require__(161);
 
 	var _RouterContext2 = _interopRequireDefault(_RouterContext);
 
 	var _RouteUtils = __webpack_require__(17);
 
-	var _RouterUtils = __webpack_require__(352);
+	var _RouterUtils = __webpack_require__(325);
 
 	var _routerWarning = __webpack_require__(8);
 
@@ -69719,9 +72031,9 @@ module.exports =
 	exports.default = Router;
 	module.exports = exports['default'];
 
-/***/ },
-/* 557 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 534 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69731,7 +72043,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _RouterContext = __webpack_require__(154);
+	var _RouterContext = __webpack_require__(161);
 
 	var _RouterContext2 = _interopRequireDefault(_RouterContext);
 
@@ -69754,9 +72066,9 @@ module.exports =
 	exports.default = RoutingContext;
 	module.exports = exports['default'];
 
-/***/ },
-/* 558 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 535 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69765,7 +72077,7 @@ module.exports =
 	exports.runChangeHooks = runChangeHooks;
 	exports.runLeaveHooks = runLeaveHooks;
 
-	var _AsyncUtils = __webpack_require__(182);
+	var _AsyncUtils = __webpack_require__(190);
 
 	var _routerWarning = __webpack_require__(8);
 
@@ -69881,9 +72193,9 @@ module.exports =
 	  }
 	}
 
-/***/ },
-/* 559 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 536 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -69895,7 +72207,7 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _RouterContext = __webpack_require__(154);
+	var _RouterContext = __webpack_require__(161);
 
 	var _RouterContext2 = _interopRequireDefault(_RouterContext);
 
@@ -69943,19 +72255,19 @@ module.exports =
 
 	module.exports = exports['default'];
 
-/***/ },
-/* 560 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 537 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 
-	var _createBrowserHistory = __webpack_require__(196);
+	var _createBrowserHistory = __webpack_require__(200);
 
 	var _createBrowserHistory2 = _interopRequireDefault(_createBrowserHistory);
 
-	var _createRouterHistory = __webpack_require__(354);
+	var _createRouterHistory = __webpack_require__(327);
 
 	var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
 
@@ -69964,15 +72276,15 @@ module.exports =
 	exports.default = (0, _createRouterHistory2.default)(_createBrowserHistory2.default);
 	module.exports = exports['default'];
 
-/***/ },
-/* 561 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 538 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	function routeParamsChanged(route, prevState, nextState) {
 	  if (!route.path) return false;
@@ -70046,17 +72358,17 @@ module.exports =
 	exports.default = computeChangedRoutes;
 	module.exports = exports['default'];
 
-/***/ },
-/* 562 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 539 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 
-	var _AsyncUtils = __webpack_require__(182);
+	var _AsyncUtils = __webpack_require__(190);
 
-	var _makeStateWithLocation = __webpack_require__(355);
+	var _makeStateWithLocation = __webpack_require__(328);
 
 	var _makeStateWithLocation2 = _interopRequireDefault(_makeStateWithLocation);
 
@@ -70097,15 +72409,15 @@ module.exports =
 	exports.default = getComponents;
 	module.exports = exports['default'];
 
-/***/ },
-/* 563 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 540 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	/**
 	 * Extracts an object of params the given route cares about from
@@ -70128,19 +72440,19 @@ module.exports =
 	exports.default = getRouteParams;
 	module.exports = exports['default'];
 
-/***/ },
-/* 564 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 541 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
 	exports.__esModule = true;
 
-	var _createHashHistory = __webpack_require__(161);
+	var _createHashHistory = __webpack_require__(169);
 
 	var _createHashHistory2 = _interopRequireDefault(_createHashHistory);
 
-	var _createRouterHistory = __webpack_require__(354);
+	var _createRouterHistory = __webpack_require__(327);
 
 	var _createRouterHistory2 = _interopRequireDefault(_createRouterHistory);
 
@@ -70149,9 +72461,9 @@ module.exports =
 	exports.default = (0, _createRouterHistory2.default)(_createHashHistory2.default);
 	module.exports = exports['default'];
 
-/***/ },
-/* 565 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 542 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -70161,7 +72473,7 @@ module.exports =
 
 	exports.default = isActive;
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	function deepEqual(a, b) {
 	  if (a == b) return true;
@@ -70306,9 +72618,9 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 566 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 543 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -70322,17 +72634,17 @@ module.exports =
 
 	var _invariant2 = _interopRequireDefault(_invariant);
 
-	var _createMemoryHistory = __webpack_require__(353);
+	var _createMemoryHistory = __webpack_require__(326);
 
 	var _createMemoryHistory2 = _interopRequireDefault(_createMemoryHistory);
 
-	var _createTransitionManager = __webpack_require__(184);
+	var _createTransitionManager = __webpack_require__(192);
 
 	var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
 
 	var _RouteUtils = __webpack_require__(17);
 
-	var _RouterUtils = __webpack_require__(352);
+	var _RouterUtils = __webpack_require__(325);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -70394,9 +72706,9 @@ module.exports =
 	exports.default = match;
 	module.exports = exports['default'];
 
-/***/ },
-/* 567 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 544 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -70408,13 +72720,13 @@ module.exports =
 
 	exports.default = matchRoutes;
 
-	var _AsyncUtils = __webpack_require__(182);
+	var _AsyncUtils = __webpack_require__(190);
 
-	var _makeStateWithLocation = __webpack_require__(355);
+	var _makeStateWithLocation = __webpack_require__(328);
 
 	var _makeStateWithLocation2 = _interopRequireDefault(_makeStateWithLocation);
 
-	var _PatternUtils = __webpack_require__(30);
+	var _PatternUtils = __webpack_require__(29);
 
 	var _routerWarning = __webpack_require__(8);
 
@@ -70650,9 +72962,9 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 568 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 545 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -70660,11 +72972,11 @@ module.exports =
 
 	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
 
-	var _useQueries = __webpack_require__(29);
+	var _useQueries = __webpack_require__(28);
 
 	var _useQueries2 = _interopRequireDefault(_useQueries);
 
-	var _createTransitionManager = __webpack_require__(184);
+	var _createTransitionManager = __webpack_require__(192);
 
 	var _createTransitionManager2 = _interopRequireDefault(_createTransitionManager);
 
@@ -70706,9 +73018,9 @@ module.exports =
 	exports.default = useRoutes;
 	module.exports = exports['default'];
 
-/***/ },
-/* 569 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 546 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -70726,11 +73038,11 @@ module.exports =
 
 	var _react2 = _interopRequireDefault(_react);
 
-	var _hoistNonReactStatics = __webpack_require__(461);
+	var _hoistNonReactStatics = __webpack_require__(437);
 
 	var _hoistNonReactStatics2 = _interopRequireDefault(_hoistNonReactStatics);
 
-	var _PropTypes = __webpack_require__(183);
+	var _PropTypes = __webpack_require__(191);
 
 	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -70775,13 +73087,13 @@ module.exports =
 	}
 	module.exports = exports['default'];
 
-/***/ },
-/* 570 */
-169,
-/* 571 */
-[585, 27],
-/* 572 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 547 */
+177,
+/* 548 */
+[564, 31],
+/* 549 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -70795,11 +73107,11 @@ module.exports =
 
 	'use strict';
 
-	var PooledClass = __webpack_require__(571);
+	var PooledClass = __webpack_require__(548);
 	var ReactElement = __webpack_require__(26);
 
 	var emptyFunction = __webpack_require__(12);
-	var traverseAllChildren = __webpack_require__(580);
+	var traverseAllChildren = __webpack_require__(559);
 
 	var twoArgumentPooler = PooledClass.twoArgumentPooler;
 	var fourArgumentPooler = PooledClass.fourArgumentPooler;
@@ -70974,730 +73286,9 @@ module.exports =
 
 	module.exports = ReactChildren;
 
-/***/ },
-/* 573 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 */
-
-	'use strict';
-
-	var _prodInvariant = __webpack_require__(27),
-	    _assign = __webpack_require__(6);
-
-	var ReactComponent = __webpack_require__(185);
-	var ReactElement = __webpack_require__(26);
-	var ReactPropTypeLocationNames = __webpack_require__(187);
-	var ReactNoopUpdateQueue = __webpack_require__(186);
-
-	var emptyObject = __webpack_require__(32);
-	var invariant = __webpack_require__(3);
-	var warning = __webpack_require__(4);
-
-	var MIXINS_KEY = 'mixins';
-
-	// Helper function to allow the creation of anonymous functions which do not
-	// have .name set to the name of the variable being assigned to.
-	function identity(fn) {
-	  return fn;
-	}
-
-	/**
-	 * Policies that describe methods in `ReactClassInterface`.
-	 */
-
-
-	var injectedMixins = [];
-
-	/**
-	 * Composite components are higher-level components that compose other composite
-	 * or host components.
-	 *
-	 * To create a new type of `ReactClass`, pass a specification of
-	 * your new class to `React.createClass`. The only requirement of your class
-	 * specification is that you implement a `render` method.
-	 *
-	 *   var MyComponent = React.createClass({
-	 *     render: function() {
-	 *       return <div>Hello World</div>;
-	 *     }
-	 *   });
-	 *
-	 * The class specification supports a specific protocol of methods that have
-	 * special meaning (e.g. `render`). See `ReactClassInterface` for
-	 * more the comprehensive protocol. Any other properties and methods in the
-	 * class specification will be available on the prototype.
-	 *
-	 * @interface ReactClassInterface
-	 * @internal
-	 */
-	var ReactClassInterface = {
-
-	  /**
-	   * An array of Mixin objects to include when defining your component.
-	   *
-	   * @type {array}
-	   * @optional
-	   */
-	  mixins: 'DEFINE_MANY',
-
-	  /**
-	   * An object containing properties and methods that should be defined on
-	   * the component's constructor instead of its prototype (static methods).
-	   *
-	   * @type {object}
-	   * @optional
-	   */
-	  statics: 'DEFINE_MANY',
-
-	  /**
-	   * Definition of prop types for this component.
-	   *
-	   * @type {object}
-	   * @optional
-	   */
-	  propTypes: 'DEFINE_MANY',
-
-	  /**
-	   * Definition of context types for this component.
-	   *
-	   * @type {object}
-	   * @optional
-	   */
-	  contextTypes: 'DEFINE_MANY',
-
-	  /**
-	   * Definition of context types this component sets for its children.
-	   *
-	   * @type {object}
-	   * @optional
-	   */
-	  childContextTypes: 'DEFINE_MANY',
-
-	  // ==== Definition methods ====
-
-	  /**
-	   * Invoked when the component is mounted. Values in the mapping will be set on
-	   * `this.props` if that prop is not specified (i.e. using an `in` check).
-	   *
-	   * This method is invoked before `getInitialState` and therefore cannot rely
-	   * on `this.state` or use `this.setState`.
-	   *
-	   * @return {object}
-	   * @optional
-	   */
-	  getDefaultProps: 'DEFINE_MANY_MERGED',
-
-	  /**
-	   * Invoked once before the component is mounted. The return value will be used
-	   * as the initial value of `this.state`.
-	   *
-	   *   getInitialState: function() {
-	   *     return {
-	   *       isOn: false,
-	   *       fooBaz: new BazFoo()
-	   *     }
-	   *   }
-	   *
-	   * @return {object}
-	   * @optional
-	   */
-	  getInitialState: 'DEFINE_MANY_MERGED',
-
-	  /**
-	   * @return {object}
-	   * @optional
-	   */
-	  getChildContext: 'DEFINE_MANY_MERGED',
-
-	  /**
-	   * Uses props from `this.props` and state from `this.state` to render the
-	   * structure of the component.
-	   *
-	   * No guarantees are made about when or how often this method is invoked, so
-	   * it must not have side effects.
-	   *
-	   *   render: function() {
-	   *     var name = this.props.name;
-	   *     return <div>Hello, {name}!</div>;
-	   *   }
-	   *
-	   * @return {ReactComponent}
-	   * @nosideeffects
-	   * @required
-	   */
-	  render: 'DEFINE_ONCE',
-
-	  // ==== Delegate methods ====
-
-	  /**
-	   * Invoked when the component is initially created and about to be mounted.
-	   * This may have side effects, but any external subscriptions or data created
-	   * by this method must be cleaned up in `componentWillUnmount`.
-	   *
-	   * @optional
-	   */
-	  componentWillMount: 'DEFINE_MANY',
-
-	  /**
-	   * Invoked when the component has been mounted and has a DOM representation.
-	   * However, there is no guarantee that the DOM node is in the document.
-	   *
-	   * Use this as an opportunity to operate on the DOM when the component has
-	   * been mounted (initialized and rendered) for the first time.
-	   *
-	   * @param {DOMElement} rootNode DOM element representing the component.
-	   * @optional
-	   */
-	  componentDidMount: 'DEFINE_MANY',
-
-	  /**
-	   * Invoked before the component receives new props.
-	   *
-	   * Use this as an opportunity to react to a prop transition by updating the
-	   * state using `this.setState`. Current props are accessed via `this.props`.
-	   *
-	   *   componentWillReceiveProps: function(nextProps, nextContext) {
-	   *     this.setState({
-	   *       likesIncreasing: nextProps.likeCount > this.props.likeCount
-	   *     });
-	   *   }
-	   *
-	   * NOTE: There is no equivalent `componentWillReceiveState`. An incoming prop
-	   * transition may cause a state change, but the opposite is not true. If you
-	   * need it, you are probably looking for `componentWillUpdate`.
-	   *
-	   * @param {object} nextProps
-	   * @optional
-	   */
-	  componentWillReceiveProps: 'DEFINE_MANY',
-
-	  /**
-	   * Invoked while deciding if the component should be updated as a result of
-	   * receiving new props, state and/or context.
-	   *
-	   * Use this as an opportunity to `return false` when you're certain that the
-	   * transition to the new props/state/context will not require a component
-	   * update.
-	   *
-	   *   shouldComponentUpdate: function(nextProps, nextState, nextContext) {
-	   *     return !equal(nextProps, this.props) ||
-	   *       !equal(nextState, this.state) ||
-	   *       !equal(nextContext, this.context);
-	   *   }
-	   *
-	   * @param {object} nextProps
-	   * @param {?object} nextState
-	   * @param {?object} nextContext
-	   * @return {boolean} True if the component should update.
-	   * @optional
-	   */
-	  shouldComponentUpdate: 'DEFINE_ONCE',
-
-	  /**
-	   * Invoked when the component is about to update due to a transition from
-	   * `this.props`, `this.state` and `this.context` to `nextProps`, `nextState`
-	   * and `nextContext`.
-	   *
-	   * Use this as an opportunity to perform preparation before an update occurs.
-	   *
-	   * NOTE: You **cannot** use `this.setState()` in this method.
-	   *
-	   * @param {object} nextProps
-	   * @param {?object} nextState
-	   * @param {?object} nextContext
-	   * @param {ReactReconcileTransaction} transaction
-	   * @optional
-	   */
-	  componentWillUpdate: 'DEFINE_MANY',
-
-	  /**
-	   * Invoked when the component's DOM representation has been updated.
-	   *
-	   * Use this as an opportunity to operate on the DOM when the component has
-	   * been updated.
-	   *
-	   * @param {object} prevProps
-	   * @param {?object} prevState
-	   * @param {?object} prevContext
-	   * @param {DOMElement} rootNode DOM element representing the component.
-	   * @optional
-	   */
-	  componentDidUpdate: 'DEFINE_MANY',
-
-	  /**
-	   * Invoked when the component is about to be removed from its parent and have
-	   * its DOM representation destroyed.
-	   *
-	   * Use this as an opportunity to deallocate any external resources.
-	   *
-	   * NOTE: There is no `componentDidUnmount` since your component will have been
-	   * destroyed by that point.
-	   *
-	   * @optional
-	   */
-	  componentWillUnmount: 'DEFINE_MANY',
-
-	  // ==== Advanced methods ====
-
-	  /**
-	   * Updates the component's currently mounted DOM representation.
-	   *
-	   * By default, this implements React's rendering and reconciliation algorithm.
-	   * Sophisticated clients may wish to override this.
-	   *
-	   * @param {ReactReconcileTransaction} transaction
-	   * @internal
-	   * @overridable
-	   */
-	  updateComponent: 'OVERRIDE_BASE'
-
-	};
-
-	/**
-	 * Mapping from class specification keys to special processing functions.
-	 *
-	 * Although these are declared like instance properties in the specification
-	 * when defining classes using `React.createClass`, they are actually static
-	 * and are accessible on the constructor instead of the prototype. Despite
-	 * being static, they must be defined outside of the "statics" key under
-	 * which all other static methods are defined.
-	 */
-	var RESERVED_SPEC_KEYS = {
-	  displayName: function (Constructor, displayName) {
-	    Constructor.displayName = displayName;
-	  },
-	  mixins: function (Constructor, mixins) {
-	    if (mixins) {
-	      for (var i = 0; i < mixins.length; i++) {
-	        mixSpecIntoComponent(Constructor, mixins[i]);
-	      }
-	    }
-	  },
-	  childContextTypes: function (Constructor, childContextTypes) {
-	    if (true) {
-	      validateTypeDef(Constructor, childContextTypes, 'childContext');
-	    }
-	    Constructor.childContextTypes = _assign({}, Constructor.childContextTypes, childContextTypes);
-	  },
-	  contextTypes: function (Constructor, contextTypes) {
-	    if (true) {
-	      validateTypeDef(Constructor, contextTypes, 'context');
-	    }
-	    Constructor.contextTypes = _assign({}, Constructor.contextTypes, contextTypes);
-	  },
-	  /**
-	   * Special case getDefaultProps which should move into statics but requires
-	   * automatic merging.
-	   */
-	  getDefaultProps: function (Constructor, getDefaultProps) {
-	    if (Constructor.getDefaultProps) {
-	      Constructor.getDefaultProps = createMergedResultFunction(Constructor.getDefaultProps, getDefaultProps);
-	    } else {
-	      Constructor.getDefaultProps = getDefaultProps;
-	    }
-	  },
-	  propTypes: function (Constructor, propTypes) {
-	    if (true) {
-	      validateTypeDef(Constructor, propTypes, 'prop');
-	    }
-	    Constructor.propTypes = _assign({}, Constructor.propTypes, propTypes);
-	  },
-	  statics: function (Constructor, statics) {
-	    mixStaticSpecIntoComponent(Constructor, statics);
-	  },
-	  autobind: function () {} };
-
-	function validateTypeDef(Constructor, typeDef, location) {
-	  for (var propName in typeDef) {
-	    if (typeDef.hasOwnProperty(propName)) {
-	      // use a warning instead of an invariant so components
-	      // don't show up in prod but only in __DEV__
-	       true ? warning(typeof typeDef[propName] === 'function', '%s: %s type `%s` is invalid; it must be a function, usually from ' + 'React.PropTypes.', Constructor.displayName || 'ReactClass', ReactPropTypeLocationNames[location], propName) : void 0;
-	    }
-	  }
-	}
-
-	function validateMethodOverride(isAlreadyDefined, name) {
-	  var specPolicy = ReactClassInterface.hasOwnProperty(name) ? ReactClassInterface[name] : null;
-
-	  // Disallow overriding of base class methods unless explicitly allowed.
-	  if (ReactClassMixin.hasOwnProperty(name)) {
-	    !(specPolicy === 'OVERRIDE_BASE') ?  true ? invariant(false, 'ReactClassInterface: You are attempting to override `%s` from your class specification. Ensure that your method names do not overlap with React methods.', name) : _prodInvariant('73', name) : void 0;
-	  }
-
-	  // Disallow defining methods more than once unless explicitly allowed.
-	  if (isAlreadyDefined) {
-	    !(specPolicy === 'DEFINE_MANY' || specPolicy === 'DEFINE_MANY_MERGED') ?  true ? invariant(false, 'ReactClassInterface: You are attempting to define `%s` on your component more than once. This conflict may be due to a mixin.', name) : _prodInvariant('74', name) : void 0;
-	  }
-	}
-
-	/**
-	 * Mixin helper which handles policy validation and reserved
-	 * specification keys when building React classes.
-	 */
-	function mixSpecIntoComponent(Constructor, spec) {
-	  if (!spec) {
-	    if (true) {
-	      var typeofSpec = typeof spec;
-	      var isMixinValid = typeofSpec === 'object' && spec !== null;
-
-	       true ? warning(isMixinValid, '%s: You\'re attempting to include a mixin that is either null ' + 'or not an object. Check the mixins included by the component, ' + 'as well as any mixins they include themselves. ' + 'Expected object but got %s.', Constructor.displayName || 'ReactClass', spec === null ? null : typeofSpec) : void 0;
-	    }
-
-	    return;
-	  }
-
-	  !(typeof spec !== 'function') ?  true ? invariant(false, 'ReactClass: You\'re attempting to use a component class or function as a mixin. Instead, just use a regular object.') : _prodInvariant('75') : void 0;
-	  !!ReactElement.isValidElement(spec) ?  true ? invariant(false, 'ReactClass: You\'re attempting to use a component as a mixin. Instead, just use a regular object.') : _prodInvariant('76') : void 0;
-
-	  var proto = Constructor.prototype;
-	  var autoBindPairs = proto.__reactAutoBindPairs;
-
-	  // By handling mixins before any other properties, we ensure the same
-	  // chaining order is applied to methods with DEFINE_MANY policy, whether
-	  // mixins are listed before or after these methods in the spec.
-	  if (spec.hasOwnProperty(MIXINS_KEY)) {
-	    RESERVED_SPEC_KEYS.mixins(Constructor, spec.mixins);
-	  }
-
-	  for (var name in spec) {
-	    if (!spec.hasOwnProperty(name)) {
-	      continue;
-	    }
-
-	    if (name === MIXINS_KEY) {
-	      // We have already handled mixins in a special case above.
-	      continue;
-	    }
-
-	    var property = spec[name];
-	    var isAlreadyDefined = proto.hasOwnProperty(name);
-	    validateMethodOverride(isAlreadyDefined, name);
-
-	    if (RESERVED_SPEC_KEYS.hasOwnProperty(name)) {
-	      RESERVED_SPEC_KEYS[name](Constructor, property);
-	    } else {
-	      // Setup methods on prototype:
-	      // The following member methods should not be automatically bound:
-	      // 1. Expected ReactClass methods (in the "interface").
-	      // 2. Overridden methods (that were mixed in).
-	      var isReactClassMethod = ReactClassInterface.hasOwnProperty(name);
-	      var isFunction = typeof property === 'function';
-	      var shouldAutoBind = isFunction && !isReactClassMethod && !isAlreadyDefined && spec.autobind !== false;
-
-	      if (shouldAutoBind) {
-	        autoBindPairs.push(name, property);
-	        proto[name] = property;
-	      } else {
-	        if (isAlreadyDefined) {
-	          var specPolicy = ReactClassInterface[name];
-
-	          // These cases should already be caught by validateMethodOverride.
-	          !(isReactClassMethod && (specPolicy === 'DEFINE_MANY_MERGED' || specPolicy === 'DEFINE_MANY')) ?  true ? invariant(false, 'ReactClass: Unexpected spec policy %s for key %s when mixing in component specs.', specPolicy, name) : _prodInvariant('77', specPolicy, name) : void 0;
-
-	          // For methods which are defined more than once, call the existing
-	          // methods before calling the new property, merging if appropriate.
-	          if (specPolicy === 'DEFINE_MANY_MERGED') {
-	            proto[name] = createMergedResultFunction(proto[name], property);
-	          } else if (specPolicy === 'DEFINE_MANY') {
-	            proto[name] = createChainedFunction(proto[name], property);
-	          }
-	        } else {
-	          proto[name] = property;
-	          if (true) {
-	            // Add verbose displayName to the function, which helps when looking
-	            // at profiling tools.
-	            if (typeof property === 'function' && spec.displayName) {
-	              proto[name].displayName = spec.displayName + '_' + name;
-	            }
-	          }
-	        }
-	      }
-	    }
-	  }
-	}
-
-	function mixStaticSpecIntoComponent(Constructor, statics) {
-	  if (!statics) {
-	    return;
-	  }
-	  for (var name in statics) {
-	    var property = statics[name];
-	    if (!statics.hasOwnProperty(name)) {
-	      continue;
-	    }
-
-	    var isReserved = name in RESERVED_SPEC_KEYS;
-	    !!isReserved ?  true ? invariant(false, 'ReactClass: You are attempting to define a reserved property, `%s`, that shouldn\'t be on the "statics" key. Define it as an instance property instead; it will still be accessible on the constructor.', name) : _prodInvariant('78', name) : void 0;
-
-	    var isInherited = name in Constructor;
-	    !!isInherited ?  true ? invariant(false, 'ReactClass: You are attempting to define `%s` on your component more than once. This conflict may be due to a mixin.', name) : _prodInvariant('79', name) : void 0;
-	    Constructor[name] = property;
-	  }
-	}
-
-	/**
-	 * Merge two objects, but throw if both contain the same key.
-	 *
-	 * @param {object} one The first object, which is mutated.
-	 * @param {object} two The second object
-	 * @return {object} one after it has been mutated to contain everything in two.
-	 */
-	function mergeIntoWithNoDuplicateKeys(one, two) {
-	  !(one && two && typeof one === 'object' && typeof two === 'object') ?  true ? invariant(false, 'mergeIntoWithNoDuplicateKeys(): Cannot merge non-objects.') : _prodInvariant('80') : void 0;
-
-	  for (var key in two) {
-	    if (two.hasOwnProperty(key)) {
-	      !(one[key] === undefined) ?  true ? invariant(false, 'mergeIntoWithNoDuplicateKeys(): Tried to merge two objects with the same key: `%s`. This conflict may be due to a mixin; in particular, this may be caused by two getInitialState() or getDefaultProps() methods returning objects with clashing keys.', key) : _prodInvariant('81', key) : void 0;
-	      one[key] = two[key];
-	    }
-	  }
-	  return one;
-	}
-
-	/**
-	 * Creates a function that invokes two functions and merges their return values.
-	 *
-	 * @param {function} one Function to invoke first.
-	 * @param {function} two Function to invoke second.
-	 * @return {function} Function that invokes the two argument functions.
-	 * @private
-	 */
-	function createMergedResultFunction(one, two) {
-	  return function mergedResult() {
-	    var a = one.apply(this, arguments);
-	    var b = two.apply(this, arguments);
-	    if (a == null) {
-	      return b;
-	    } else if (b == null) {
-	      return a;
-	    }
-	    var c = {};
-	    mergeIntoWithNoDuplicateKeys(c, a);
-	    mergeIntoWithNoDuplicateKeys(c, b);
-	    return c;
-	  };
-	}
-
-	/**
-	 * Creates a function that invokes two functions and ignores their return vales.
-	 *
-	 * @param {function} one Function to invoke first.
-	 * @param {function} two Function to invoke second.
-	 * @return {function} Function that invokes the two argument functions.
-	 * @private
-	 */
-	function createChainedFunction(one, two) {
-	  return function chainedFunction() {
-	    one.apply(this, arguments);
-	    two.apply(this, arguments);
-	  };
-	}
-
-	/**
-	 * Binds a method to the component.
-	 *
-	 * @param {object} component Component whose method is going to be bound.
-	 * @param {function} method Method to be bound.
-	 * @return {function} The bound method.
-	 */
-	function bindAutoBindMethod(component, method) {
-	  var boundMethod = method.bind(component);
-	  if (true) {
-	    boundMethod.__reactBoundContext = component;
-	    boundMethod.__reactBoundMethod = method;
-	    boundMethod.__reactBoundArguments = null;
-	    var componentName = component.constructor.displayName;
-	    var _bind = boundMethod.bind;
-	    boundMethod.bind = function (newThis) {
-	      for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-	        args[_key - 1] = arguments[_key];
-	      }
-
-	      // User is trying to bind() an autobound method; we effectively will
-	      // ignore the value of "this" that the user is trying to use, so
-	      // let's warn.
-	      if (newThis !== component && newThis !== null) {
-	         true ? warning(false, 'bind(): React component methods may only be bound to the ' + 'component instance. See %s', componentName) : void 0;
-	      } else if (!args.length) {
-	         true ? warning(false, 'bind(): You are binding a component method to the component. ' + 'React does this for you automatically in a high-performance ' + 'way, so you can safely remove this call. See %s', componentName) : void 0;
-	        return boundMethod;
-	      }
-	      var reboundMethod = _bind.apply(boundMethod, arguments);
-	      reboundMethod.__reactBoundContext = component;
-	      reboundMethod.__reactBoundMethod = method;
-	      reboundMethod.__reactBoundArguments = args;
-	      return reboundMethod;
-	    };
-	  }
-	  return boundMethod;
-	}
-
-	/**
-	 * Binds all auto-bound methods in a component.
-	 *
-	 * @param {object} component Component whose method is going to be bound.
-	 */
-	function bindAutoBindMethods(component) {
-	  var pairs = component.__reactAutoBindPairs;
-	  for (var i = 0; i < pairs.length; i += 2) {
-	    var autoBindKey = pairs[i];
-	    var method = pairs[i + 1];
-	    component[autoBindKey] = bindAutoBindMethod(component, method);
-	  }
-	}
-
-	/**
-	 * Add more to the ReactClass base class. These are all legacy features and
-	 * therefore not already part of the modern ReactComponent.
-	 */
-	var ReactClassMixin = {
-
-	  /**
-	   * TODO: This will be deprecated because state should always keep a consistent
-	   * type signature and the only use case for this, is to avoid that.
-	   */
-	  replaceState: function (newState, callback) {
-	    this.updater.enqueueReplaceState(this, newState);
-	    if (callback) {
-	      this.updater.enqueueCallback(this, callback, 'replaceState');
-	    }
-	  },
-
-	  /**
-	   * Checks whether or not this composite component is mounted.
-	   * @return {boolean} True if mounted, false otherwise.
-	   * @protected
-	   * @final
-	   */
-	  isMounted: function () {
-	    return this.updater.isMounted(this);
-	  }
-	};
-
-	var ReactClassComponent = function () {};
-	_assign(ReactClassComponent.prototype, ReactComponent.prototype, ReactClassMixin);
-
-	/**
-	 * Module for creating composite components.
-	 *
-	 * @class ReactClass
-	 */
-	var ReactClass = {
-
-	  /**
-	   * Creates a composite component class given a class specification.
-	   * See https://facebook.github.io/react/docs/top-level-api.html#react.createclass
-	   *
-	   * @param {object} spec Class specification (which must define `render`).
-	   * @return {function} Component constructor function.
-	   * @public
-	   */
-	  createClass: function (spec) {
-	    // To keep our warnings more understandable, we'll use a little hack here to
-	    // ensure that Constructor.name !== 'Constructor'. This makes sure we don't
-	    // unnecessarily identify a class without displayName as 'Constructor'.
-	    var Constructor = identity(function (props, context, updater) {
-	      // This constructor gets overridden by mocks. The argument is used
-	      // by mocks to assert on what gets mounted.
-
-	      if (true) {
-	         true ? warning(this instanceof Constructor, 'Something is calling a React component directly. Use a factory or ' + 'JSX instead. See: https://fb.me/react-legacyfactory') : void 0;
-	      }
-
-	      // Wire up auto-binding
-	      if (this.__reactAutoBindPairs.length) {
-	        bindAutoBindMethods(this);
-	      }
-
-	      this.props = props;
-	      this.context = context;
-	      this.refs = emptyObject;
-	      this.updater = updater || ReactNoopUpdateQueue;
-
-	      this.state = null;
-
-	      // ReactClasses doesn't have constructors. Instead, they use the
-	      // getInitialState and componentWillMount methods for initialization.
-
-	      var initialState = this.getInitialState ? this.getInitialState() : null;
-	      if (true) {
-	        // We allow auto-mocks to proceed as if they're returning null.
-	        if (initialState === undefined && this.getInitialState._isMockFunction) {
-	          // This is probably bad practice. Consider warning here and
-	          // deprecating this convenience.
-	          initialState = null;
-	        }
-	      }
-	      !(typeof initialState === 'object' && !Array.isArray(initialState)) ?  true ? invariant(false, '%s.getInitialState(): must return an object or null', Constructor.displayName || 'ReactCompositeComponent') : _prodInvariant('82', Constructor.displayName || 'ReactCompositeComponent') : void 0;
-
-	      this.state = initialState;
-	    });
-	    Constructor.prototype = new ReactClassComponent();
-	    Constructor.prototype.constructor = Constructor;
-	    Constructor.prototype.__reactAutoBindPairs = [];
-
-	    injectedMixins.forEach(mixSpecIntoComponent.bind(null, Constructor));
-
-	    mixSpecIntoComponent(Constructor, spec);
-
-	    // Initialize the defaultProps property after all mixins have been merged.
-	    if (Constructor.getDefaultProps) {
-	      Constructor.defaultProps = Constructor.getDefaultProps();
-	    }
-
-	    if (true) {
-	      // This is a tag to indicate that the use of these method names is ok,
-	      // since it's used with createClass. If it's not, then it's likely a
-	      // mistake so we'll warn you to use the static property, property
-	      // initializer or constructor respectively.
-	      if (Constructor.getDefaultProps) {
-	        Constructor.getDefaultProps.isReactClassApproved = {};
-	      }
-	      if (Constructor.prototype.getInitialState) {
-	        Constructor.prototype.getInitialState.isReactClassApproved = {};
-	      }
-	    }
-
-	    !Constructor.prototype.render ?  true ? invariant(false, 'createClass(...): Class specification must implement a `render` method.') : _prodInvariant('83') : void 0;
-
-	    if (true) {
-	       true ? warning(!Constructor.prototype.componentShouldUpdate, '%s has a method called ' + 'componentShouldUpdate(). Did you mean shouldComponentUpdate()? ' + 'The name is phrased as a question because the function is ' + 'expected to return a value.', spec.displayName || 'A component') : void 0;
-	       true ? warning(!Constructor.prototype.componentWillRecieveProps, '%s has a method called ' + 'componentWillRecieveProps(). Did you mean componentWillReceiveProps()?', spec.displayName || 'A component') : void 0;
-	    }
-
-	    // Reduce time spent doing lookups by setting these on the prototype.
-	    for (var methodName in ReactClassInterface) {
-	      if (!Constructor.prototype[methodName]) {
-	        Constructor.prototype[methodName] = null;
-	      }
-	    }
-
-	    return Constructor;
-	  },
-
-	  injection: {
-	    injectMixin: function (mixin) {
-	      injectedMixins.push(mixin);
-	    }
-	  }
-
-	};
-
-	module.exports = ReactClass;
-
-/***/ },
-/* 574 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 550 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -71720,13 +73311,12 @@ module.exports =
 	 */
 	var createDOMFactory = ReactElement.createFactory;
 	if (true) {
-	  var ReactElementValidator = __webpack_require__(358);
+	  var ReactElementValidator = __webpack_require__(332);
 	  createDOMFactory = ReactElementValidator.createFactory;
 	}
 
 	/**
 	 * Creates a mapping from supported HTML tags to `ReactDOMComponent` classes.
-	 * This is also accessible via `React.DOM`.
 	 *
 	 * @public
 	 */
@@ -71869,9 +73459,11 @@ module.exports =
 
 	module.exports = ReactDOMFactories;
 
-/***/ },
-/* 575 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 551 */
+496,
+/* 552 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -71885,431 +73477,20 @@ module.exports =
 
 	'use strict';
 
-	var ReactElement = __webpack_require__(26);
-	var ReactPropTypeLocationNames = __webpack_require__(187);
-	var ReactPropTypesSecret = __webpack_require__(359);
+	var _require = __webpack_require__(26),
+	    isValidElement = _require.isValidElement;
 
-	var emptyFunction = __webpack_require__(12);
-	var getIteratorFn = __webpack_require__(189);
-	var warning = __webpack_require__(4);
+	var factory = __webpack_require__(299);
 
-	/**
-	 * Collection of methods that allow declaration and validation of props that are
-	 * supplied to React components. Example usage:
-	 *
-	 *   var Props = require('ReactPropTypes');
-	 *   var MyArticle = React.createClass({
-	 *     propTypes: {
-	 *       // An optional string prop named "description".
-	 *       description: Props.string,
-	 *
-	 *       // A required enum prop named "category".
-	 *       category: Props.oneOf(['News','Photos']).isRequired,
-	 *
-	 *       // A prop named "dialog" that requires an instance of Dialog.
-	 *       dialog: Props.instanceOf(Dialog).isRequired
-	 *     },
-	 *     render: function() { ... }
-	 *   });
-	 *
-	 * A more formal specification of how these methods are used:
-	 *
-	 *   type := array|bool|func|object|number|string|oneOf([...])|instanceOf(...)
-	 *   decl := ReactPropTypes.{type}(.isRequired)?
-	 *
-	 * Each and every declaration produces a function with the same signature. This
-	 * allows the creation of custom validation functions. For example:
-	 *
-	 *  var MyLink = React.createClass({
-	 *    propTypes: {
-	 *      // An optional string or URI prop named "href".
-	 *      href: function(props, propName, componentName) {
-	 *        var propValue = props[propName];
-	 *        if (propValue != null && typeof propValue !== 'string' &&
-	 *            !(propValue instanceof URI)) {
-	 *          return new Error(
-	 *            'Expected a string or an URI for ' + propName + ' in ' +
-	 *            componentName
-	 *          );
-	 *        }
-	 *      }
-	 *    },
-	 *    render: function() {...}
-	 *  });
-	 *
-	 * @internal
-	 */
+	module.exports = factory(isValidElement);
 
-	var ANONYMOUS = '<<anonymous>>';
-
-	var ReactPropTypes = {
-	  array: createPrimitiveTypeChecker('array'),
-	  bool: createPrimitiveTypeChecker('boolean'),
-	  func: createPrimitiveTypeChecker('function'),
-	  number: createPrimitiveTypeChecker('number'),
-	  object: createPrimitiveTypeChecker('object'),
-	  string: createPrimitiveTypeChecker('string'),
-	  symbol: createPrimitiveTypeChecker('symbol'),
-
-	  any: createAnyTypeChecker(),
-	  arrayOf: createArrayOfTypeChecker,
-	  element: createElementTypeChecker(),
-	  instanceOf: createInstanceTypeChecker,
-	  node: createNodeChecker(),
-	  objectOf: createObjectOfTypeChecker,
-	  oneOf: createEnumTypeChecker,
-	  oneOfType: createUnionTypeChecker,
-	  shape: createShapeTypeChecker
-	};
-
-	/**
-	 * inlined Object.is polyfill to avoid requiring consumers ship their own
-	 * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is
-	 */
-	/*eslint-disable no-self-compare*/
-	function is(x, y) {
-	  // SameValue algorithm
-	  if (x === y) {
-	    // Steps 1-5, 7-10
-	    // Steps 6.b-6.e: +0 != -0
-	    return x !== 0 || 1 / x === 1 / y;
-	  } else {
-	    // Step 6.a: NaN == NaN
-	    return x !== x && y !== y;
-	  }
-	}
-	/*eslint-enable no-self-compare*/
-
-	/**
-	 * We use an Error-like object for backward compatibility as people may call
-	 * PropTypes directly and inspect their output. However we don't use real
-	 * Errors anymore. We don't inspect their stack anyway, and creating them
-	 * is prohibitively expensive if they are created too often, such as what
-	 * happens in oneOfType() for any type before the one that matched.
-	 */
-	function PropTypeError(message) {
-	  this.message = message;
-	  this.stack = '';
-	}
-	// Make `instanceof Error` still work for returned errors.
-	PropTypeError.prototype = Error.prototype;
-
-	function createChainableTypeChecker(validate) {
-	  if (true) {
-	    var manualPropTypeCallCache = {};
-	  }
-	  function checkType(isRequired, props, propName, componentName, location, propFullName, secret) {
-	    componentName = componentName || ANONYMOUS;
-	    propFullName = propFullName || propName;
-	    if (true) {
-	      if (secret !== ReactPropTypesSecret && typeof console !== 'undefined') {
-	        var cacheKey = componentName + ':' + propName;
-	        if (!manualPropTypeCallCache[cacheKey]) {
-	           true ? warning(false, 'You are manually calling a React.PropTypes validation ' + 'function for the `%s` prop on `%s`. This is deprecated ' + 'and will not work in production with the next major version. ' + 'You may be seeing this warning due to a third-party PropTypes ' + 'library. See https://fb.me/react-warning-dont-call-proptypes ' + 'for details.', propFullName, componentName) : void 0;
-	          manualPropTypeCallCache[cacheKey] = true;
-	        }
-	      }
-	    }
-	    if (props[propName] == null) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      if (isRequired) {
-	        if (props[propName] === null) {
-	          return new PropTypeError('The ' + locationName + ' `' + propFullName + '` is marked as required ' + ('in `' + componentName + '`, but its value is `null`.'));
-	        }
-	        return new PropTypeError('The ' + locationName + ' `' + propFullName + '` is marked as required in ' + ('`' + componentName + '`, but its value is `undefined`.'));
-	      }
-	      return null;
-	    } else {
-	      return validate(props, propName, componentName, location, propFullName);
-	    }
-	  }
-
-	  var chainedCheckType = checkType.bind(null, false);
-	  chainedCheckType.isRequired = checkType.bind(null, true);
-
-	  return chainedCheckType;
-	}
-
-	function createPrimitiveTypeChecker(expectedType) {
-	  function validate(props, propName, componentName, location, propFullName, secret) {
-	    var propValue = props[propName];
-	    var propType = getPropType(propValue);
-	    if (propType !== expectedType) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      // `propValue` being instance of, say, date/regexp, pass the 'object'
-	      // check, but we can offer a more precise error message here rather than
-	      // 'of type `object`'.
-	      var preciseType = getPreciseType(propValue);
-
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type ' + ('`' + preciseType + '` supplied to `' + componentName + '`, expected ') + ('`' + expectedType + '`.'));
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createAnyTypeChecker() {
-	  return createChainableTypeChecker(emptyFunction.thatReturns(null));
-	}
-
-	function createArrayOfTypeChecker(typeChecker) {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    if (typeof typeChecker !== 'function') {
-	      return new PropTypeError('Property `' + propFullName + '` of component `' + componentName + '` has invalid PropType notation inside arrayOf.');
-	    }
-	    var propValue = props[propName];
-	    if (!Array.isArray(propValue)) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      var propType = getPropType(propValue);
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected an array.'));
-	    }
-	    for (var i = 0; i < propValue.length; i++) {
-	      var error = typeChecker(propValue, i, componentName, location, propFullName + '[' + i + ']', ReactPropTypesSecret);
-	      if (error instanceof Error) {
-	        return error;
-	      }
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createElementTypeChecker() {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    var propValue = props[propName];
-	    if (!ReactElement.isValidElement(propValue)) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      var propType = getPropType(propValue);
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected a single ReactElement.'));
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createInstanceTypeChecker(expectedClass) {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    if (!(props[propName] instanceof expectedClass)) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      var expectedClassName = expectedClass.name || ANONYMOUS;
-	      var actualClassName = getClassName(props[propName]);
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type ' + ('`' + actualClassName + '` supplied to `' + componentName + '`, expected ') + ('instance of `' + expectedClassName + '`.'));
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createEnumTypeChecker(expectedValues) {
-	  if (!Array.isArray(expectedValues)) {
-	     true ? warning(false, 'Invalid argument supplied to oneOf, expected an instance of array.') : void 0;
-	    return emptyFunction.thatReturnsNull;
-	  }
-
-	  function validate(props, propName, componentName, location, propFullName) {
-	    var propValue = props[propName];
-	    for (var i = 0; i < expectedValues.length; i++) {
-	      if (is(propValue, expectedValues[i])) {
-	        return null;
-	      }
-	    }
-
-	    var locationName = ReactPropTypeLocationNames[location];
-	    var valuesString = JSON.stringify(expectedValues);
-	    return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of value `' + propValue + '` ' + ('supplied to `' + componentName + '`, expected one of ' + valuesString + '.'));
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createObjectOfTypeChecker(typeChecker) {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    if (typeof typeChecker !== 'function') {
-	      return new PropTypeError('Property `' + propFullName + '` of component `' + componentName + '` has invalid PropType notation inside objectOf.');
-	    }
-	    var propValue = props[propName];
-	    var propType = getPropType(propValue);
-	    if (propType !== 'object') {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type ' + ('`' + propType + '` supplied to `' + componentName + '`, expected an object.'));
-	    }
-	    for (var key in propValue) {
-	      if (propValue.hasOwnProperty(key)) {
-	        var error = typeChecker(propValue, key, componentName, location, propFullName + '.' + key, ReactPropTypesSecret);
-	        if (error instanceof Error) {
-	          return error;
-	        }
-	      }
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createUnionTypeChecker(arrayOfTypeCheckers) {
-	  if (!Array.isArray(arrayOfTypeCheckers)) {
-	     true ? warning(false, 'Invalid argument supplied to oneOfType, expected an instance of array.') : void 0;
-	    return emptyFunction.thatReturnsNull;
-	  }
-
-	  function validate(props, propName, componentName, location, propFullName) {
-	    for (var i = 0; i < arrayOfTypeCheckers.length; i++) {
-	      var checker = arrayOfTypeCheckers[i];
-	      if (checker(props, propName, componentName, location, propFullName, ReactPropTypesSecret) == null) {
-	        return null;
-	      }
-	    }
-
-	    var locationName = ReactPropTypeLocationNames[location];
-	    return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` supplied to ' + ('`' + componentName + '`.'));
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createNodeChecker() {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    if (!isNode(props[propName])) {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` supplied to ' + ('`' + componentName + '`, expected a ReactNode.'));
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function createShapeTypeChecker(shapeTypes) {
-	  function validate(props, propName, componentName, location, propFullName) {
-	    var propValue = props[propName];
-	    var propType = getPropType(propValue);
-	    if (propType !== 'object') {
-	      var locationName = ReactPropTypeLocationNames[location];
-	      return new PropTypeError('Invalid ' + locationName + ' `' + propFullName + '` of type `' + propType + '` ' + ('supplied to `' + componentName + '`, expected `object`.'));
-	    }
-	    for (var key in shapeTypes) {
-	      var checker = shapeTypes[key];
-	      if (!checker) {
-	        continue;
-	      }
-	      var error = checker(propValue, key, componentName, location, propFullName + '.' + key, ReactPropTypesSecret);
-	      if (error) {
-	        return error;
-	      }
-	    }
-	    return null;
-	  }
-	  return createChainableTypeChecker(validate);
-	}
-
-	function isNode(propValue) {
-	  switch (typeof propValue) {
-	    case 'number':
-	    case 'string':
-	    case 'undefined':
-	      return true;
-	    case 'boolean':
-	      return !propValue;
-	    case 'object':
-	      if (Array.isArray(propValue)) {
-	        return propValue.every(isNode);
-	      }
-	      if (propValue === null || ReactElement.isValidElement(propValue)) {
-	        return true;
-	      }
-
-	      var iteratorFn = getIteratorFn(propValue);
-	      if (iteratorFn) {
-	        var iterator = iteratorFn.call(propValue);
-	        var step;
-	        if (iteratorFn !== propValue.entries) {
-	          while (!(step = iterator.next()).done) {
-	            if (!isNode(step.value)) {
-	              return false;
-	            }
-	          }
-	        } else {
-	          // Iterator will provide entry [k,v] tuples rather than values.
-	          while (!(step = iterator.next()).done) {
-	            var entry = step.value;
-	            if (entry) {
-	              if (!isNode(entry[1])) {
-	                return false;
-	              }
-	            }
-	          }
-	        }
-	      } else {
-	        return false;
-	      }
-
-	      return true;
-	    default:
-	      return false;
-	  }
-	}
-
-	function isSymbol(propType, propValue) {
-	  // Native Symbol.
-	  if (propType === 'symbol') {
-	    return true;
-	  }
-
-	  // 19.4.3.5 Symbol.prototype[@@toStringTag] === 'Symbol'
-	  if (propValue['@@toStringTag'] === 'Symbol') {
-	    return true;
-	  }
-
-	  // Fallback for non-spec compliant Symbols which are polyfilled.
-	  if (typeof Symbol === 'function' && propValue instanceof Symbol) {
-	    return true;
-	  }
-
-	  return false;
-	}
-
-	// Equivalent of `typeof` but with special handling for array and regexp.
-	function getPropType(propValue) {
-	  var propType = typeof propValue;
-	  if (Array.isArray(propValue)) {
-	    return 'array';
-	  }
-	  if (propValue instanceof RegExp) {
-	    // Old webkits (at least until Android 4.0) return 'function' rather than
-	    // 'object' for typeof a RegExp. We'll normalize this here so that /bla/
-	    // passes PropTypes.object.
-	    return 'object';
-	  }
-	  if (isSymbol(propType, propValue)) {
-	    return 'symbol';
-	  }
-	  return propType;
-	}
-
-	// This handles more types than `getPropType`. Only used for error messages.
-	// See `createPrimitiveTypeChecker`.
-	function getPreciseType(propValue) {
-	  var propType = getPropType(propValue);
-	  if (propType === 'object') {
-	    if (propValue instanceof Date) {
-	      return 'date';
-	    } else if (propValue instanceof RegExp) {
-	      return 'regexp';
-	    }
-	  }
-	  return propType;
-	}
-
-	// Returns class name of the object, if any.
-	function getClassName(propValue) {
-	  if (!propValue.constructor || !propValue.constructor.name) {
-	    return ANONYMOUS;
-	  }
-	  return propValue.constructor.name;
-	}
-
-	module.exports = ReactPropTypes;
-
-/***/ },
-/* 576 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 553 */
+310,
+/* 554 */
+502,
+/* 555 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -72323,58 +73504,10 @@ module.exports =
 
 	'use strict';
 
-	var _assign = __webpack_require__(6);
+	var _prodInvariant = __webpack_require__(31);
 
-	var ReactComponent = __webpack_require__(185);
-	var ReactNoopUpdateQueue = __webpack_require__(186);
-
-	var emptyObject = __webpack_require__(32);
-
-	/**
-	 * Base class helpers for the updating state of a component.
-	 */
-	function ReactPureComponent(props, context, updater) {
-	  // Duplicated from ReactComponent.
-	  this.props = props;
-	  this.context = context;
-	  this.refs = emptyObject;
-	  // We initialize the default updater but the real one gets injected by the
-	  // renderer.
-	  this.updater = updater || ReactNoopUpdateQueue;
-	}
-
-	function ComponentDummy() {}
-	ComponentDummy.prototype = ReactComponent.prototype;
-	ReactPureComponent.prototype = new ComponentDummy();
-	ReactPureComponent.prototype.constructor = ReactPureComponent;
-	// Avoid an extra prototype jump for these methods.
-	_assign(ReactPureComponent.prototype, ReactComponent.prototype);
-	ReactPureComponent.prototype.isPureReactComponent = true;
-
-	module.exports = ReactPureComponent;
-
-/***/ },
-/* 577 */
-524,
-/* 578 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/**
-	 * Copyright 2013-present, Facebook, Inc.
-	 * All rights reserved.
-	 *
-	 * This source code is licensed under the BSD-style license found in the
-	 * LICENSE file in the root directory of this source tree. An additional grant
-	 * of patent rights can be found in the PATENTS file in the same directory.
-	 *
-	 */
-
-	'use strict';
-
-	var _prodInvariant = __webpack_require__(27);
-
-	var ReactPropTypeLocationNames = __webpack_require__(187);
-	var ReactPropTypesSecret = __webpack_require__(359);
+	var ReactPropTypeLocationNames = __webpack_require__(551);
+	var ReactPropTypesSecret = __webpack_require__(553);
 
 	var invariant = __webpack_require__(3);
 	var warning = __webpack_require__(4);
@@ -72446,9 +73579,61 @@ module.exports =
 
 	module.exports = checkReactTypeSpec;
 
-/***/ },
-/* 579 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 556 */
+/***/ (function(module, exports, __webpack_require__) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 */
+
+	'use strict';
+
+	var _require = __webpack_require__(330),
+	    Component = _require.Component;
+
+	var _require2 = __webpack_require__(26),
+	    isValidElement = _require2.isValidElement;
+
+	var ReactNoopUpdateQueue = __webpack_require__(333);
+	var factory = __webpack_require__(387);
+
+	module.exports = factory(Component, isValidElement, ReactNoopUpdateQueue);
+
+/***/ }),
+/* 557 */
+/***/ (function(module, exports) {
+
+	/**
+	 * Copyright 2013-present, Facebook, Inc.
+	 * All rights reserved.
+	 *
+	 * This source code is licensed under the BSD-style license found in the
+	 * LICENSE file in the root directory of this source tree. An additional grant
+	 * of patent rights can be found in the PATENTS file in the same directory.
+	 *
+	 * 
+	 */
+
+	'use strict';
+
+	var nextDebugID = 1;
+
+	function getNextDebugID() {
+	  return nextDebugID++;
+	}
+
+	module.exports = getNextDebugID;
+
+/***/ }),
+/* 558 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -72461,7 +73646,7 @@ module.exports =
 	 */
 	'use strict';
 
-	var _prodInvariant = __webpack_require__(27);
+	var _prodInvariant = __webpack_require__(31);
 
 	var ReactElement = __webpack_require__(26);
 
@@ -72488,9 +73673,9 @@ module.exports =
 
 	module.exports = onlyChild;
 
-/***/ },
-/* 580 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 559 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -72504,14 +73689,14 @@ module.exports =
 
 	'use strict';
 
-	var _prodInvariant = __webpack_require__(27);
+	var _prodInvariant = __webpack_require__(31);
 
 	var ReactCurrentOwner = __webpack_require__(18);
-	var REACT_ELEMENT_TYPE = __webpack_require__(357);
+	var REACT_ELEMENT_TYPE = __webpack_require__(331);
 
-	var getIteratorFn = __webpack_require__(189);
+	var getIteratorFn = __webpack_require__(334);
 	var invariant = __webpack_require__(3);
-	var KeyEscapeUtils = __webpack_require__(570);
+	var KeyEscapeUtils = __webpack_require__(547);
 	var warning = __webpack_require__(4);
 
 	var SEPARATOR = '.';
@@ -72625,7 +73810,7 @@ module.exports =
 	      if (true) {
 	        addendum = ' If you meant to render a collection of children, use an array ' + 'instead or wrap the object using createFragment(object) from the ' + 'React add-ons.';
 	        if (children._isReactElement) {
-	          addendum = ' It looks like you\'re using an element created by a different ' + 'version of React. Make sure to use only one copy of React.';
+	          addendum = " It looks like you're using an element created by a different " + 'version of React. Make sure to use only one copy of React.';
 	        }
 	        if (ReactCurrentOwner.current) {
 	          var name = ReactCurrentOwner.current.getName();
@@ -72668,9 +73853,9 @@ module.exports =
 
 	module.exports = traverseAllChildren;
 
-/***/ },
-/* 581 */
-/***/ function(module, exports) {
+/***/ }),
+/* 560 */
+/***/ (function(module, exports) {
 
 	'use strict';
 	module.exports = function (str) {
@@ -72680,9 +73865,9 @@ module.exports =
 	};
 
 
-/***/ },
-/* 582 */
-/***/ function(module, exports) {
+/***/ }),
+/* 561 */
+/***/ (function(module, exports) {
 
 	(function(self) {
 	  'use strict';
@@ -72770,7 +73955,10 @@ module.exports =
 	      headers.forEach(function(value, name) {
 	        this.append(name, value)
 	      }, this)
-
+	    } else if (Array.isArray(headers)) {
+	      headers.forEach(function(header) {
+	        this.append(header[0], header[1])
+	      }, this)
 	    } else if (headers) {
 	      Object.getOwnPropertyNames(headers).forEach(function(name) {
 	        this.append(name, headers[name])
@@ -73144,9 +74332,9 @@ module.exports =
 	})(typeof self !== 'undefined' ? self : this);
 
 
-/***/ },
-/* 583 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 562 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
 
@@ -73156,8 +74344,8 @@ module.exports =
 	  script.setAttribute("data-manual", "");
 	}
 
-	var Prism = __webpack_require__(328);
-	var languages = __webpack_require__(479);
+	var Prism = __webpack_require__(298);
+	var languages = __webpack_require__(455);
 
 	var highlight = Prism.highlight;
 
@@ -73182,12 +74370,12 @@ module.exports =
 	};
 
 
-/***/ },
-/* 584 */
-/***/ function(module, exports, __webpack_require__) {
+/***/ }),
+/* 563 */
+/***/ (function(module, exports, __webpack_require__) {
 
 	'use strict';
-	var marked = __webpack_require__(477);
+	var marked = __webpack_require__(453);
 
 	module.exports = function(section) {
 	  // alter marked renderer to add slashes to beginning so images point at root
@@ -73416,9 +74604,9 @@ module.exports =
 	}
 
 
-/***/ },
-/* 585 */
-/***/ function(module, exports, __webpack_require__, __webpack_module_template_argument_0__) {
+/***/ }),
+/* 564 */
+/***/ (function(module, exports, __webpack_require__, __webpack_module_template_argument_0__) {
 
 	/**
 	 * Copyright 2013-present, Facebook, Inc.
@@ -73532,5 +74720,5 @@ module.exports =
 
 	module.exports = PooledClass;
 
-/***/ }
+/***/ })
 /******/ ])));
