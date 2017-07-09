@@ -26,7 +26,8 @@
   "jest": {
     "moduleNameMapper": {
       "\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$": "<rootDir>/test/__mocks__/fileMock.js",
-      "\\.(css|scss)$": "<rootDir>/test/__mocks__/styleMock.js"
+      "\\.(css|scss)$": "<rootDir>/test/__mocks__/styleMock.js",
+      "collectCoverageFrom": ["components/**/*.{js,jsx}"]
     }
   },
   "scripts": {
@@ -43,6 +44,7 @@
     "lint:social": "alex ./**/*.md",
     "lint:prose": "cp .proselintrc ~/ && proselint content",
     "test": "jest",
+    "test:coverage": "jest --coverage",
     "sitemap": "cd build && sitemap-static --prefix=https://webpack.js.org/ > sitemap.xml"
   },
   "devDependencies": {
