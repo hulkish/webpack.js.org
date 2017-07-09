@@ -1,8 +1,10 @@
-node_modules
 npm-debug.log
-build
-generated
+*.DS_Store
 components/support/support-backers.json
 components/support/support-sponsors.json
 components/starter-kits/starter-kits-data.json
 .antwar
+coverage
+node_modules
+build
+generated

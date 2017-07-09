@@ -23,6 +23,12 @@
   "engines": {
     "node": ">=6.9"
   },
+  "jest": {
+    "moduleNameMapper": {
+      "\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$": "<rootDir>/test/__mocks__/fileMock.js",
+      "\\.(css|scss)$": "<rootDir>/test/__mocks__/styleMock.js"
+    }
+  },
   "scripts": {
     "start": "npm run init:generated && npm run fetch && node ./bootstrap.js",
     "build": "npm run init:generated && npm run fetch && rm -rf build/ && node ./bootstrap.js && npm run sitemap && echo webpack.js.org > build/CNAME",
@@ -36,7 +42,7 @@
     "lint:markdown": "markdownlint --config ./.markdownlint.json *.md ./content/**/*.md",
     "lint:social": "alex ./**/*.md",
     "lint:prose": "cp .proselintrc ~/ && proselint content",
-    "test": "npm run lint",
+    "test": "jest",
     "sitemap": "cd build && sitemap-static --prefix=https://webpack.js.org/ > sitemap.xml"
   },
   "devDependencies": {
@@ -68,6 +74,7 @@
     "html-webpack-plugin": "^2.22.0",
     "http-server": "^0.9.0",
     "hyperlink": "^2.8.0",
+    "jest": "^20.0.4",
     "json-loader": "^0.5.4",
     "lodash": "^4.16.1",
     "markdown-loader": "^0.1.7",
@@ -84,6 +91,7 @@
     "prism-languages": "^0.3.1",
     "prismjs": "^1.5.1",
     "raw-loader": "^0.5.1",
+    "react-test-renderer": "^15.6.1",
     "request": "^2.75.0",
     "sass-loader": "^4.0.2",
     "sitemap-static": "^0.3.1",
