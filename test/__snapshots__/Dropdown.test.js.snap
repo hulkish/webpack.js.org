@@ -1,0 +1,41 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`renders correctly 1`] = `
+<div
+  className="dropdown "
+  onMouseLeave={[Function]}
+  onMouseOver={[Function]}
+>
+  <img
+    className="dropdown__language"
+    src={Object {}}
+  />
+  <i
+    className="dropdown__arrow"
+  />
+  <div
+    className="dropdown__list "
+  >
+    <ul>
+      <li>
+        <a
+          href="https://webpack.js.org/"
+        >
+          <span>
+            English
+          </span>
+        </a>
+      </li>
+      <li>
+        <a
+          href="https://doc.webpack-china.org/"
+        >
+          <span>
+            中文
+          </span>
+        </a>
+      </li>
+    </ul>
+  </div>
+</div>
+`;
